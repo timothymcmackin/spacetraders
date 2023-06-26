@@ -26,7 +26,7 @@ const main = async () => {
   // Mining drones cost around 80k, so skip if we don't have the money
   const { credits } = await get('/my/agent');
   if (credits < 80000) {
-    log('Credits:', credits);
+    log('Credits:', credits, 'are not enough to buy a ship');
     process.exit(0);
   }
 

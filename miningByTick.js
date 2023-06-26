@@ -143,6 +143,7 @@ const mineDeliverSell = async (ship, procurementContract) => {
 
       if (updatedContract.contract.deliver[0].unitsRequired <= 0) {
         log(ship.symbol, 'completed contract');
+        // No current way to get a new contract
       } else {
         await fs.promises.writeFile(contractCacheFileName, JSON.stringify(updatedContract, null, 2));
       }

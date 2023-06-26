@@ -1,62 +1,19 @@
-require('dotenv').config();
-const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const {
+  log,
+  post,
+  get,
+  timer,
+  miningShipStatusFolder,
+  shipCacheFileName,
+  contractCacheFileName,
+  navigate,
+} = require('./utils');
 /*
 I'm intending this program to be run regularly as part of a cron job.
 It check for a current contract and if there is one, it sends mining ships to mine.
 */
-
-const cacheFolder = path.resolve(__dirname, 'cache');
-const miningShipStatusFolder = path.resolve(cacheFolder, 'miningShips');
-const shipCacheFileName = path.resolve(cacheFolder, 'ships.json');
-const contractCacheFileName = path.resolve(cacheFolder, 'contract.json');
-
-const timer = s => new Promise( res => setTimeout(res, s * 1000));
-const log = console.log;
-
-const api = axios.create({
-  baseURL: 'https://api.spacetraders.io/v2/',
-  timeout: 5000,
-  headers: {'Authorization': `Bearer ${process.env.SPACETRADERS_TOKEN}`},
-});
-
-// Utility functions to get rid of the data:data in every request
-const get = (path) => api.get(path)
-  .then(({ status, data: { data: result }}) => result)
-  .catch(err => {
-    // TODO handle 429s
-    log('Error on GET ', path);
-    console.error(err);
-  });
-
-const post = (path, body = {}) => api.post(path, body)
-  .then(({ status, data: { data: result }}) => result)
-  .catch(err => {
-    // TODO handle 429s
-    log('Error on POST ', path);
-    console.error(err);
-  });
-
-// Send the ship somewhere and resolve when it arrives
-const navigate = async (ship, waypoint, reason) => {
-  log(ship.symbol, 'navigating to', waypoint, reason);
-  const navigationResponse = await post(`/my/ships/${ship.symbol}/navigate`, {
-    waypointSymbol: waypoint,
-  });
-
-  // How long will it take?
-  const departureTime = Date.parse(navigationResponse.nav.route.departureTime);
-  const arrivalDate = Date.parse(navigationResponse.nav.route.arrival);
-  const waitTime = (arrivalDate - departureTime) / 1000 + 1;
-  await timer(waitTime);
-  log(ship.symbol, 'arrived');
-
-  // dock
-  await post(`/my/ships/${ship.symbol}/dock`);
-  //refuel
-  await post(`/my/ships/${ship.symbol}/refuel`);
-}
 
 async function main() {
   // Flush ships that have been inactive for a while because they are probably the result of a crash
@@ -93,8 +50,7 @@ async function main() {
     await fs.promises.writeFile(contractCacheFileName, JSON.stringify(procurementContract, null, 2));
   }
 
-  //TODO don't make API requests if all ships are in use
-
+  // Don't make API requests if all ships are in use
   // Get the list of ships that are currently under management by this program
   const managedMiningships = await fs.promises.readdir(miningShipStatusFolder);
   const allMiners = ships.filter(({ registration }) => registration.role === 'EXCAVATOR');
@@ -103,10 +59,11 @@ async function main() {
   const minersToDirect = allMiners.filter(({ symbol }) => !managedMiningships.includes(symbol));
   if (minersToDirect.length === 0) {
     log('No idle miners');
+    process.exit(0);
   }
 
   // Check status of procurement contract
-  const isContractFulfulled = procurementContract.fulfilled;
+  const isContractFulfulled = procurementContract.contract.fulfilled;
 
   // If there is an active contract
   if (!isContractFulfulled) {
@@ -132,27 +89,29 @@ const mineDeliverSell = async (ship, procurementContract) => {
   await fs.promises.writeFile(getShipStatusFilePath(ship), new Date().toString(), 'utf8');
   // Update ship location
   ship = await get(`/my/ships/${ship.symbol}`);
+
+  // Does the ship have capacity?
+
   // Check if the ship is currently at a mining location
   var currentSystem = await get(`/systems/${ship.nav.systemSymbol}`);
   var currentWaypoint = currentSystem.waypoints.find((oneWaypoint) => oneWaypoint.symbol === ship.nav.waypointSymbol);
-
-  if (currentWaypoint && currentWaypoint.type === 'ASTEROID_FIELD') {
-    // We're good to mine
-  } else {
-    // Find an asteroid field and go there
-    const { symbol: asteroidFieldSymbol } = currentSystem.waypoints.find(({ type }) => type === 'ASTEROID_FIELD');
-    // TODO what if there's no asteroid field here?
-    await navigate(ship, asteroidFieldSymbol, 'to go to an asteroid field');
-  }
-
-  // Make sure we're in orbit
-  await post(`/my/ships/${ship.symbol}/orbit`);
 
   // Mining loop
   var full = false;
   const startingCargo = await get(`/my/ships/${ship.symbol}/cargo`);
   if (startingCargo.units === startingCargo.capacity) {
     full = true;
+  }
+  if (!full) {
+    if (currentWaypoint && currentWaypoint.type === 'ASTEROID_FIELD') {
+      // We're good to mine
+    } else {
+      // Find an asteroid field and go there
+      const { symbol: asteroidFieldSymbol } = currentSystem.waypoints.find(({ type }) => type === 'ASTEROID_FIELD');
+      // TODO what if there's no asteroid field here?
+      await navigate(ship, asteroidFieldSymbol, 'to go to an asteroid field');
+    }
+    await post(`/my/ships/${ship.symbol}/orbit`);
   }
   while (!full) {
     const cooldown = await get(`/my/ships/${ship.symbol}/cooldown`);
@@ -168,7 +127,7 @@ const mineDeliverSell = async (ship, procurementContract) => {
 
   // Do we have any of the target material?
   const { inventory } = await get(`/my/ships/${ship.symbol}/cargo`);
-  const targetMaterial = procurementContract.terms.deliver[0].tradeSymbol;
+  const targetMaterial = procurementContract.contract.terms.deliver[0].tradeSymbol;
   if (inventory.some(({ symbol: cargoSymbol, units }) =>
     units > 0 && cargoSymbol === targetMaterial
   )) {
@@ -176,9 +135,9 @@ const mineDeliverSell = async (ship, procurementContract) => {
     const targetMaterialCargo = inventory.find(({ symbol: cargoSymbol }) => cargoSymbol === targetMaterial);
     const quantity = targetMaterialCargo.units;
     // Go to the contract location
-    await navigate(ship, procurementContract.terms.deliver[0].destinationSymbol, 'to deliver on contract');
+    await navigate(ship, procurementContract.contract.terms.deliver[0].destinationSymbol, 'to deliver on contract');
     // Deliver the contract materials
-    const updatedContract = await post(`/my/contracts/${procurementContract.id}/deliver`, {
+    const updatedContract = await post(`/my/contracts/${procurementContract.contract.id}/deliver`, {
       shipSymbol: ship.symbol,
       tradeSymbol: targetMaterial,
       units: quantity,

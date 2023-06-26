@@ -1,0 +1,14 @@
+{
+  "name": "spacetraders",
+  "version": "1.0.0",
+  "description": "Tim's SpaceTraders code",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "miningByTick": "node ./miningByTick.js"
+  },
+  "dependencies": {
+    "axios": "^1.4.0",
+    "dotenv": "^16.3.1"
+  }
+}

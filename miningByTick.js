@@ -1,3 +1,4 @@
+
 const fs = require('fs');
 const path = require('path');
 const {
@@ -12,7 +13,7 @@ const {
 } = require('./utils');
 /*
 I'm intending this program to be run regularly as part of a cron job.
-It check for a current contract and if there is one, it sends mining ships to mine.
+It checks for a current contract and if there is one, it sends mining ships to mine.
 */
 
 async function main() {

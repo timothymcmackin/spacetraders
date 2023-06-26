@@ -49,7 +49,10 @@ async function main() {
     // Get mining contract status
     const allContracts = await get('/my/contracts');
     procurementContract = allContracts.find(({ type }) => type === 'PROCUREMENT');
-    await fs.promises.writeFile(contractCacheFileName, JSON.stringify(procurementContract, null, 2));
+    if (procurementContract) {
+      // Cache contract
+      await fs.promises.writeFile(contractCacheFileName, JSON.stringify(procurementContract, null, 2));
+    }
   }
 
   // Don't make API requests if all ships are in use
@@ -64,23 +67,14 @@ async function main() {
     process.exit(0);
   }
 
-  // Check status of procurement contract
-  const isContractFulfulled = procurementContract.contract.fulfilled;
-
-  // If there is an active contract
-  if (!isContractFulfulled) {
-    await Promise.all(minersToDirect.map((ship) =>
-      commandMiningShip(ship, procurementContract)
-        .catch((err) => log(ship.symbol, err))
-        .finally(async () => {
-          // This program is done with this ship; remove the file that indicates it as unavailable
-          await fs.promises.unlink(getShipStatusFilePath(ship));
-        }))
-    );
-  } else {
-    // TODO get a new contract
-    // For now, just mine
-  }
+  await Promise.all(minersToDirect.map((ship) =>
+    commandMiningShip(ship, procurementContract)
+      .catch((err) => log(ship.symbol, err))
+      .finally(async () => {
+        // This program is done with this ship; remove the file that indicates it as unavailable
+        await fs.promises.unlink(getShipStatusFilePath(ship));
+      }))
+  );
 
   // Check if there's enough money to buy another ship
 
@@ -128,32 +122,34 @@ const mineDeliverSell = async (ship, procurementContract) => {
   }
 
   // Do we have any of the target material?
-  const { inventory } = await get(`/my/ships/${ship.symbol}/cargo`);
-  const targetMaterial = procurementContract.contract.terms.deliver[0].tradeSymbol;
-  if (inventory.some(({ symbol: cargoSymbol, units }) =>
-    units > 0 && cargoSymbol === targetMaterial
-  )) {
-    // How much do we have?
-    const targetMaterialCargo = inventory.find(({ symbol: cargoSymbol }) => cargoSymbol === targetMaterial);
-    const quantity = targetMaterialCargo.units;
-    // Go to the contract location
-    await navigate(ship, procurementContract.contract.terms.deliver[0].destinationSymbol, 'to deliver on contract');
-    // Deliver the contract materials
-    const updatedContract = await post(`/my/contracts/${procurementContract.contract.id}/deliver`, {
-      shipSymbol: ship.symbol,
-      tradeSymbol: targetMaterial,
-      units: quantity,
-    });
-    log(ship.symbol, 'delivered', quantity, 'of', targetMaterial);
+  if (procurementContract) {
+    const { inventory } = await get(`/my/ships/${ship.symbol}/cargo`);
+    const targetMaterial = procurementContract.contract.terms.deliver[0].tradeSymbol;
+    if (inventory.some(({ symbol: cargoSymbol, units }) =>
+      units > 0 && cargoSymbol === targetMaterial
+    )) {
+      // How much do we have?
+      const targetMaterialCargo = inventory.find(({ symbol: cargoSymbol }) => cargoSymbol === targetMaterial);
+      const quantity = targetMaterialCargo.units;
+      // Go to the contract location
+      await navigate(ship, procurementContract.contract.terms.deliver[0].destinationSymbol, 'to deliver on contract');
+      // Deliver the contract materials
+      const updatedContract = await post(`/my/contracts/${procurementContract.contract.id}/deliver`, {
+        shipSymbol: ship.symbol,
+        tradeSymbol: targetMaterial,
+        units: quantity,
+      });
+      log(ship.symbol, 'delivered', quantity, 'of', targetMaterial);
 
-    if (updatedContract.contract.deliver[0].unitsRequired <= 0) {
-      log(ship.symbol, 'completed contract');
+      if (updatedContract.contract.deliver[0].unitsRequired <= 0) {
+        log(ship.symbol, 'completed contract');
+      } else {
+        await fs.promises.writeFile(contractCacheFileName, JSON.stringify(updatedContract, null, 2));
+      }
+
     } else {
-      await fs.promises.writeFile(contractCacheFileName, JSON.stringify(updatedContract, null, 2));
+      log(ship.symbol, 'did a mining loop but got no', targetMaterial);
     }
-
-  } else {
-    log(ship.symbol, 'did a mining loop but got no', targetMaterial);
   }
 
   // Sell off the rest

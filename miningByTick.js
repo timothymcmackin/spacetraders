@@ -1,4 +1,3 @@
-
 const fs = require('fs');
 const path = require('path');
 const {
@@ -11,13 +10,15 @@ const {
   contractCacheFileName,
   navigate,
 } = require('./utils');
+
 /*
 I'm intending this program to be run regularly as part of a cron job.
 It checks for a current contract and if there is one, it sends mining ships to mine.
 */
 
 async function main() {
-  // Flush ships that have been inactive for a while because they are probably the result of a crash
+  // Flush ships that have been inactive for a while because they are probably the result of a crash.
+  // Should probably do this in a database but the files are easier for now.
   const activeShipSymbols = await fs.promises.readdir(miningShipStatusFolder);
   const now = new Date();
   const checkShipPromises = activeShipSymbols.map(async (oneFile) => {
@@ -143,14 +144,20 @@ const mineDeliverSell = async (ship, procurementContract) => {
       tradeSymbol: targetMaterial,
       units: quantity,
     });
-    await fs.promises.writeFile(contractCacheFileName, JSON.stringify(updatedContract, null, 2));
     log(ship.symbol, 'delivered', quantity, 'of', targetMaterial);
+
+    if (updatedContract.contract.deliver[0].unitsRequired <= 0) {
+      log(ship.symbol, 'completed contract');
+    } else {
+      await fs.promises.writeFile(contractCacheFileName, JSON.stringify(updatedContract, null, 2));
+    }
+
   } else {
     log(ship.symbol, 'did a mining loop but got no', targetMaterial);
   }
 
-  await post(`/my/ships/${ship.symbol}/dock`);
   // Sell off the rest
+  await post(`/my/ships/${ship.symbol}/dock`);
   const { inventory: inventoryAfter } = await get(`/my/ships/${ship.symbol}/cargo`);
   if (inventoryAfter.some(({units}) => units > 0)) {
     // Sell everything

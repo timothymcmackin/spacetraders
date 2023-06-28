@@ -1,23 +1,10 @@
 require('dotenv').config();
 const fs = require('fs');
 const {
-  log,
-  post,
   get,
-  timer,
-  contractCacheFileName,
   navigate,
-  sellAll,
-  travelToNearestMarketplace,
 } = require('./utils');
 const {
-  getAvailableMiningShips,
-  controlShip,
-  updateShipIsActive,
-  releaseShip,
-  restartInactiveShips,
-  endPool,
-  initDatabase,
 } = require('./databaseUtils');
 const { updateMarketplaceData } = require('./marketplaceUtils');
 

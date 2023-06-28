@@ -88,7 +88,7 @@ const navigate = async (ship, waypoint, reason = '', refuel = true) => {
       arrivalTime = Date.parse(navigationResponse.nav.route.arrival);
 
       // How long will it take?
-      const waitTime = (arrivalTime - departureTime) / 1000 + 1;
+      const waitTime = Math.ceil((arrivalTime - departureTime) / 1000 + 1);
       log(ship.symbol, 'travel time', waitTime, 'seconds');
       await timer(waitTime);
       log(ship.symbol, 'arrived');
@@ -98,7 +98,8 @@ const navigate = async (ship, waypoint, reason = '', refuel = true) => {
   await post(`/my/ships/${ship.symbol}/dock`);
   //refuel
   if (refuel) {
-    await post(`/my/ships/${ship.symbol}/refuel`);
+    const { transaction } = await post(`/my/ships/${ship.symbol}/refuel`);
+    log(ship.symbol, 'fuel cost', transaction.totalPrice);
   }
 
   // Should be passing the system symbol to this function as well.

@@ -71,7 +71,7 @@ const nomadLoop = async (symbol) => {
           from marketplaceData as m
           inner join waypoints as w
           on m.waypointSymbol = w.waypointSymbol
-          where m.symbol = "${tradeGoodSymbol}" and w.waypointSymbol != "${ship.nav.waypointSymbol}" and w.deadEnd < 1`;
+          where m.symbol = "${tradeGoodSymbol}" and w.waypointSymbol != "${ship.nav.waypointSymbol}"`; // Ignore dead ends
         const maxData = await db.query(maxDataQuery);
         if (!maxData[0]['max(m.sellPrice)']) {
           return {

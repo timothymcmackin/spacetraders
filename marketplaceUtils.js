@@ -23,6 +23,7 @@ const updateMarketplaceData = async (systemSymbol, waypointSymbol, tradeGoods) =
       db.release();
     }
   }
+  console.log('Updated marketplace data for', waypointSymbol);
 }
 
 module.exports = {

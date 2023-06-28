@@ -108,13 +108,30 @@ const initDatabase = async () => {
       sellPrice int,
       PRIMARY KEY (systemSymbol, waypointSymbol, symbol)`);
 
-      // Clear system data
+      // Clear waypoint data
       await db.query(`DROP TABLE waypoints`);
       await db.query(`CREATE TABLE waypoints (
         systemSymbol varchar(255) NOT NULL,
         waypointSymbol varchar(255) NOT NULL,
         deadEnd int DEFAULT 0,
         PRIMARY KEY (systemSymbol, waypointSymbol))`);
+
+      // Clear system data
+      await db.query(`DROP TABLE systems`);
+      await db.query(`CREATE TABLE systems (
+        systemSymbol varchar(255) NOT NULL,
+        PRIMARY KEY (systemSymbol))`);
+      await db.query(`DROP TABLE jumpPaths`);
+      await db.query(`CREATE TABLE jumpPaths (
+        id int NOT NULL AUTO_INCREMENT,
+        systemA varchar(255),
+        systemB varchar(255),
+        PRIMARY KEY (id),
+        FOREIGN KEY (systemA) REFERENCES systems(systemSymbol),
+        FOREIGN KEY (systemB) REFERENCES systems(systemSymbol)
+        )`);
+
+
 
   } catch (error) {
     console.log(error);

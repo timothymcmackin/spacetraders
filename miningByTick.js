@@ -1,15 +1,23 @@
+require('dotenv').config();
 const fs = require('fs');
-const path = require('path');
 const {
   log,
   post,
   get,
   timer,
-  miningShipStatusFolder,
-  shipCacheFileName,
   contractCacheFileName,
   navigate,
+  sellAll,
+  travelToNearestMarketplace,
 } = require('./utils');
+const {
+  getAvailableMiningShips,
+  controlShip,
+  updateShipIsActive,
+  releaseShip,
+  restartInactiveShips,
+  endPool,
+} = require('./databaseUtils');
 
 /*
 I'm intending this program to be run regularly as part of a cron job.
@@ -17,31 +25,11 @@ It checks for a current contract and if there is one, it sends mining ships to m
 */
 
 async function main() {
+  // await test();
   // Flush ships that have been inactive for a while because they are probably the result of a crash.
-  // Should probably do this in a database but the files are easier for now.
-  const activeShipSymbols = await fs.promises.readdir(miningShipStatusFolder);
-  const now = new Date();
-  const checkShipPromises = activeShipSymbols.map(async (oneFile) => {
-    // If the file is older than 30 minutes, wipe it
-    const fileContents = fs.promises.readFile(path.resolve(miningShipStatusFolder, oneFile), 'utf8');
-    const lastActiveDate = Date.parse(fileContents);
-    const diffTime = Math.abs(lastActiveDate - now);
-    const diffMinutes = Math.ceil(diffTime / (1000 * 60));
-    if (diffMinutes >= 30) {
-      return fs.promises.unlink(path.resolve(miningShipStatusFolder, oneFile));
-    }
-  });
-  await Promise.all(checkShipPromises);
+  await restartInactiveShips(10, 'EXCAVATOR');
 
-  // To conserve rate limit, cache ships and contracts
-  var ships;
-  try {
-    ships = require(shipCacheFileName);
-  } catch (error) {
-    // Get ship status
-    ships = await get('/my/ships');
-    await fs.promises.writeFile(shipCacheFileName, JSON.stringify(ships, null, 2));
-  }
+  // To conserve rate limit, cache contract
   var procurementContract;
   try {
     procurementContract = require(contractCacheFileName);
@@ -55,36 +43,41 @@ async function main() {
     }
   }
 
-  // Don't make API requests if all ships are in use
-  // Get the list of ships that are currently under management by this program
-  const managedMiningships = await fs.promises.readdir(miningShipStatusFolder);
-  const allMiners = ships.filter(({ registration }) => registration.role === 'EXCAVATOR');
+  // // Limiting miners for debugging
+  // const controlledMiners = ['PINCKNEY-3'];
+  // await controlShip(controlledMiners[0]);
 
-  // If there's no file for this ship, it's available for command
-  const minersToDirect = allMiners.filter(({ symbol }) => !managedMiningships.includes(symbol));
-  if (minersToDirect.length === 0) {
+  const availableMiners = await getAvailableMiningShips();
+  if (availableMiners.length === 0) {
     log('No idle miners');
     process.exit(0);
   }
+  const controlledMiners = await Promise.all(availableMiners.filter(async (symbol) => await controlShip(symbol)));
 
-  await Promise.all(minersToDirect.map((ship) =>
-    commandMiningShip(ship, procurementContract)
-      .catch((err) => log(ship.symbol, err))
-      .finally(async () => {
-        // This program is done with this ship; remove the file that indicates it as unavailable
-        await fs.promises.unlink(getShipStatusFilePath(ship));
-      }))
-  );
+  var startupPromises = [];
+  await controlledMiners.reduce(async (prevPromise, symbol) => {
+    await prevPromise;
+    startupPromises.push(
+      commandMiningShip(symbol, procurementContract)
+        .catch((err) => log(symbol, err))
+        .finally(async () => releaseShip(symbol))
+      );
+    return timer(5);
+  }, Promise.resolve());
 
-  // Check if there's enough money to buy another ship
-
+  await Promise.all(controlledMiners.map((symbol) =>
+    commandMiningShip(symbol, procurementContract)
+      .catch((err) => log(symbol, err))
+      .finally(async () => releaseShip(symbol))
+    ));
+  endPool();
 }
 
 // Mine, deliver, sell loop
-const mineDeliverSell = async (ship, procurementContract) => {
-  await fs.promises.writeFile(getShipStatusFilePath(ship), new Date().toString(), 'utf8');
-  // Update ship location
-  ship = await get(`/my/ships/${ship.symbol}`);
+const mineDeliverSell = async (symbol, procurementContract) => {
+  updateShipIsActive(symbol);
+  // Update ship data
+  ship = await get(`/my/ships/${symbol}`);
 
   // Does the ship have capacity?
 
@@ -112,11 +105,15 @@ const mineDeliverSell = async (ship, procurementContract) => {
   while (!full) {
     const cooldown = await get(`/my/ships/${ship.symbol}/cooldown`);
     if (cooldown) {
-      await timer(cooldown.remainingSeconds || 0);
+      await timer(cooldown.remainingSeconds + 1 || 0);
     }
     log(ship.symbol, 'extract');
-    const result = await post(`/my/ships/${ship.symbol}/extract`);
-    if (result.cargo && result.cargo.units === result.cargo.capacity) {
+    var result = await post(`/my/ships/${ship.symbol}/extract`);
+    if (!result) {
+      // Not sure what's causing this error
+      await timer(100);
+      result = await post(`/my/ships/${ship.symbol}/extract`);
+    } else if (result.cargo && result.cargo.units === result.cargo.capacity) {
       full = true;
     }
   }
@@ -141,7 +138,7 @@ const mineDeliverSell = async (ship, procurementContract) => {
       });
       log(ship.symbol, 'delivered', quantity, 'of', targetMaterial);
 
-      if (updatedContract.contract.deliver[0].unitsRequired <= 0) {
+      if (updatedContract.contract.terms.deliver[0].unitsRequired <= 0) {
         log(ship.symbol, 'completed contract');
         // No current way to get a new contract
         await fs.promises.writeFile(contractCacheFileName, '{}', 'utf8');
@@ -155,35 +152,21 @@ const mineDeliverSell = async (ship, procurementContract) => {
   }
 
   // Sell off the rest
-  await post(`/my/ships/${ship.symbol}/dock`);
-  const { inventory: inventoryAfter } = await get(`/my/ships/${ship.symbol}/cargo`);
-  if (inventoryAfter.some(({units}) => units > 0)) {
-    // Sell everything
-    // One at a time due to limitations in the API
-    await inventoryAfter.reduce(async (prevPromise, { symbol: materialSymbol, units }) => {
-      await prevPromise;
-      return post(`/my/ships/${ship.symbol}/sell`, {
-        symbol: materialSymbol,
-        units,
-      });
-    }, Promise.resolve());
-    log(ship.symbol, 'sold cargo');
-  }
+  await post(`/my/ships/${ship.symbol}/orbit`);
+
+  await travelToNearestMarketplace(ship.symbol);
+
+  await sellAll(ship.symbol, true);
 
   log(ship.symbol, 'completed mining loop')
   // Mining loop completed
 }
 
-async function commandMiningShip(ship, procurementContract) {
-  log(ship.symbol, 'starting mining');
-  // Mark ship as being currently under control of the program
-  await fs.promises.writeFile(getShipStatusFilePath(ship), new Date().toString(), 'utf8');
-
-  await mineDeliverSell(ship, procurementContract);
+async function commandMiningShip(symbol, procurementContract) {
+  log(symbol, 'starting mining');
+  // while (true) await mineDeliverSell(symbol, procurementContract);
+  await mineDeliverSell(symbol, procurementContract);
 }
-
-const getShipStatusFilePath = (ship) => path.resolve(miningShipStatusFolder, ship.symbol);
-
 
 main()
   .catch(err => {

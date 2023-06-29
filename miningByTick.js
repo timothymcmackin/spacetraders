@@ -1,10 +1,8 @@
 require('dotenv').config();
 const fs = require('fs');
 const {
-  log,
   post,
   get,
-  timer,
   contractCacheFileName,
   navigate,
   sellAll,
@@ -18,6 +16,8 @@ const {
   restartInactiveShips,
   endPool,
 } = require('./databaseUtils');
+
+const timer = s => new Promise( res => setTimeout(res, s * 1000));
 
 /*
 I'm intending this program to be run regularly as part of a cron job.
@@ -49,7 +49,7 @@ async function main() {
 
   const availableMiners = await getAvailableMiningShips();
   if (availableMiners.length === 0) {
-    log('No idle miners');
+    console.log('No idle miners');
     process.exit(0);
   }
   const controlledMiners = await Promise.all(availableMiners.filter(async (symbol) => await controlShip(symbol)));
@@ -59,7 +59,7 @@ async function main() {
     await prevPromise;
     startupPromises.push(
       commandMiningShip(symbol, procurementContract)
-        .catch((err) => log(symbol, err))
+        .catch((err) => console.log(symbol, err))
         .finally(async () => releaseShip(symbol))
       );
     return timer(5);
@@ -67,7 +67,7 @@ async function main() {
 
   await Promise.all(controlledMiners.map((symbol) =>
     commandMiningShip(symbol, procurementContract)
-      .catch((err) => log(symbol, err))
+      .catch((err) => console.log(symbol, err))
       .finally(async () => releaseShip(symbol))
     ));
   endPool();
@@ -107,7 +107,7 @@ const mineDeliverSell = async (symbol, procurementContract) => {
     if (cooldown) {
       await timer(cooldown.remainingSeconds + 1 || 0);
     }
-    log(ship.symbol, 'extract');
+    console.log(ship.symbol, 'extract');
     var result = await post(`/my/ships/${ship.symbol}/extract`);
     if (!result) {
       // Not sure what's causing this error
@@ -136,10 +136,10 @@ const mineDeliverSell = async (symbol, procurementContract) => {
         tradeSymbol: targetMaterial,
         units: quantity,
       });
-      log(ship.symbol, 'delivered', quantity, 'of', targetMaterial);
+      console.log(ship.symbol, 'delivered', quantity, 'of', targetMaterial);
 
       if (updatedContract.contract.terms.deliver[0].unitsRequired <= 0) {
-        log(ship.symbol, 'completed contract');
+        console.log(ship.symbol, 'completed contract');
         // No current way to get a new contract
         await fs.promises.writeFile(contractCacheFileName, '{}', 'utf8');
       } else {
@@ -147,7 +147,7 @@ const mineDeliverSell = async (symbol, procurementContract) => {
       }
 
     } else {
-      log(ship.symbol, 'did a mining loop but got no', targetMaterial);
+      console.log(ship.symbol, 'did a mining loop but got no', targetMaterial);
     }
   }
 
@@ -158,12 +158,12 @@ const mineDeliverSell = async (symbol, procurementContract) => {
 
   await sellAll(ship.symbol, true);
 
-  log(ship.symbol, 'completed mining loop')
+  console.log(ship.symbol, 'completed mining loop')
   // Mining loop completed
 }
 
 async function commandMiningShip(symbol, procurementContract) {
-  log(symbol, 'starting mining');
+  console.log(symbol, 'starting mining');
   // while (true) await mineDeliverSell(symbol, procurementContract);
   await mineDeliverSell(symbol, procurementContract);
 }

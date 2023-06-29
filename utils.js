@@ -1,85 +1,78 @@
 require('dotenv').config();
-const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const rateLimit = require('axios-rate-limit');
+
+const { post, get } = require('./api');
+
 const { updateMarketplaceData } = require('./marketplaceUtils');
 
-const api = rateLimit(axios.create({
-  baseURL: 'https://api.spacetraders.io/v2/',
-  timeout: 5000,
-  headers: { 'Authorization': `Bearer ${process.env.SPACETRADERS_TOKEN}` },
-}),
-  // Limit to 1 request per second
-  // https://github.com/aishek/axios-rate-limit
-  { maxRPS: 1}
-);
-
 const timer = s => new Promise( res => setTimeout(res, s * 1000));
-const log = console.log;
 
 const cacheFolder = path.resolve(__dirname, 'cache');
 const contractCacheFileName = path.resolve(cacheFolder, 'contract.json');
 
-// Utility functions to get rid of the data:data in every request
-const get = (path) => api.get(path)
-  .then(async (response) => {
-    let { status, data } = response;
-    if (status === 429) {
-      log('Rate limit on GET', path);
-      await timer(2 * 60);
-    } else if (!status.toString().startsWith('2')){
-      log("ErrorCode:", response?.data?.error?.code);
-      log(JSON.stringify(result.error, null, 2))
-    }
-    const { data: result } = data;
-    return result;
-  })
-  .catch((error) => {
-    log(JSON.stringify(error.response.data, null, 2))
-  })
+const getSystemFromWaypoint = (waypointSymbol) => {
+  const stringSplit = waypointSymbol.split('-');
+  return `${stringSplit[0]}-${stringSplit[1]}`;
+}
 
-const post = (path, body = {}) => api.post(path, body)
-  .then(async (response) => {
-    let { status, data } = response;
-    if (status === 429) {
-      log('Rate limit on POST', path);
-      await timer(2 * 60);
-    } else if (status === 409 && response?.data?.error?.code === 4000) {
-      // Too soon for cooldown
-      const remainingCooldown = response.data.error.data.cooldown.remainingSeconds;
-      await timer(remainingCooldown);
-      const newResponse = await api.post(path, body);
-      data = newResponse.data;
-    } else if (!status.toString().startsWith('2')){
-      log("ErrorCode:", response?.data?.error?.code);
-      log(JSON.stringify(result.error, null, 2))
-    }
-    const { data: result } = data;
-    return result;
-  })
-  .catch((error) => {
-    log(JSON.stringify(error.response.data, null, 2))
-  })
+// Currently everything is one jump away
+// Implement pathing later
+const jump = async (ship, systemSymbol) => {
+  await post(`/my/ships/${ship.symbol}/orbit`);
+  if (!ship.nav) {
+    ship = await get('/my/ships/' + ship.symbol);
+  }
+  if (ship.nav.systemSymbol === systemSymbol) {
+    console.log('Already in system', systemSymbol);
+    return;
+  }
 
+  const waypointsInSystem = await get(`/systems/${ship.nav.systemSymbol}/waypoints`);
+  const jumpGateWaypoint = waypointsInSystem
+    .find(({ type }) => type === 'JUMP_GATE');
+  const targetWaypoint = jumpGateWaypoint.symbol;
+  await navigate(ship, targetWaypoint, 'to jump gate', false);
+
+  console.log(ship.symbol, 'jumping to', systemSymbol);
+  await post(`/my/ships/${ship.symbol}/orbit`);
+  const { nav } = await post('/my/ships/' + ship.symbol + '/jump', {
+    systemSymbol,
+  });
+
+  departureTime = Date.parse(nav.route.departureTime);
+  arrivalTime = Date.parse(nav.route.arrival);
+
+  // How long will it take?
+  const waitTime = Math.ceil((arrivalTime - departureTime) / 1000 + 1);
+  console.log(ship.symbol, 'travel time', waitTime, 'seconds');
+  await timer(waitTime);
+  console.log(ship.symbol, 'arrived');
+}
 
 // Send the ship somewhere and resolve when it arrives
 const navigate = async (ship, waypoint, reason = '', refuel = true) => {
-  log(ship.symbol, 'navigating to', waypoint, reason);
+  console.log(ship.symbol, 'navigating to', waypoint, reason);
   // Make sure we're in orbit
-  await post(`/my/ships/${ship.symbol}/orbit`);
+  var { nav } = await post(`/my/ships/${ship.symbol}/orbit`);
 
-  // Maybe we're already there
+  // Are we in the right system?
+  const targetSystem = getSystemFromWaypoint(waypoint);
+  if (targetSystem !== nav.systemSymbol) {
+    await jump(ship, targetSystem);
+  }
+
+  // Are we already there?
+  if (waypoint === nav.waypointSymbol) {
+    console.log(ship.symbol, 'is already at', waypoint);
+    return;
+  }
+
   var departureTime = 0;
   var arrivalTime = 0;
   await post(`/my/ships/${ship.symbol}/navigate`, {
     waypointSymbol: waypoint,
   })
-    .catch((err) => {
-      // We're probably already there
-      log(err);
-      log(ship.symbol, 'is already at', waypoint);
-    })
     .then(async (navigationResponse) => {
       if (!navigationResponse) {
         return;
@@ -89,9 +82,9 @@ const navigate = async (ship, waypoint, reason = '', refuel = true) => {
 
       // How long will it take?
       const waitTime = Math.ceil((arrivalTime - departureTime) / 1000 + 1);
-      log(ship.symbol, 'travel time', waitTime, 'seconds');
+      console.log(ship.symbol, 'travel time', waitTime, 'seconds');
       await timer(waitTime);
-      log(ship.symbol, 'arrived');
+      console.log(ship.symbol, 'arrived');
     });
 
   // dock
@@ -99,12 +92,12 @@ const navigate = async (ship, waypoint, reason = '', refuel = true) => {
   //refuel
   if (refuel) {
     const { transaction } = await post(`/my/ships/${ship.symbol}/refuel`);
-    log(ship.symbol, 'fuel cost', transaction.totalPrice);
+    console.log(ship.symbol, 'fuel cost', transaction.totalPrice);
   }
 
   // Should be passing the system symbol to this function as well.
   // Till then:
-  const { nav } = await get(`/my/ships/${ship.symbol}`);
+  nav = (await get(`/my/ships/${ship.symbol}`)).nav;
   const { systemSymbol } = nav;
 
   // Does the waypoint have a market?
@@ -123,7 +116,7 @@ const sellAll = async (shipSymbol, dumpUnsold = false) => {
   const { systemSymbol, waypointSymbol } = nav;
   const { inventory } = cargo;
   if (inventory.length === 0) {
-    log(shipSymbol, "doesn't have anything to sell");
+    console.log(shipSymbol, "doesn't have anything to sell");
     return;
   }
 
@@ -153,7 +146,7 @@ const sellAll = async (shipSymbol, dumpUnsold = false) => {
         }
       }
     }, Promise.resolve());
-    log(shipSymbol, 'sold cargo');
+    console.log(shipSymbol, 'sold cargo');
   }
 }
 
@@ -180,10 +173,6 @@ const travelToNearestMarketplace = async (shipSymbol) => {
 }
 
 module.exports = {
-  timer,
-  log,
-  post,
-  get,
   contractCacheFileName,
   navigate,
   sellAll,

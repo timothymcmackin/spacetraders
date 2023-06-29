@@ -3,10 +3,9 @@ const mariadb = require('mariadb');
 const flatten = require('lodash/flatten');
 const {
   get,
-  timer,
 } = require('./utils');
 
-const { log } = require('./utils');
+const timer = s => new Promise( res => setTimeout(res, s * 1000));
 
 // https://github.com/sidorares/node-mysql2
 // connection never releases with this method
@@ -51,7 +50,7 @@ const initDatabaseFromPool = async () => {
     // const currentTables = await connection.query('SHOW TABLES');
     // console.log(currentTables);
   } catch (error) {
-    log(error);
+    console.log(error);
   } finally {
     // if (connection) return connection.release(); //release to pool
   }

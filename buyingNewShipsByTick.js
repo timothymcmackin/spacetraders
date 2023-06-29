@@ -1,6 +1,5 @@
 const fs = require('fs');
 const {
-  log,
   post,
   get,
   shipCacheFileName,
@@ -11,7 +10,7 @@ const commandShipSymbol = 'PINCKNEY-1';
 
 const main = async () => {
 
-  log('Checking for the ability to buy new ships');
+  console.log('Checking for the ability to buy new ships');
 
   // To conserve rate limit, cache ships and contracts
   var ships;
@@ -26,13 +25,13 @@ const main = async () => {
   // Mining drones cost around 80k, so skip if we don't have the money
   const { credits } = await get('/my/agent');
   if (credits < 80000) {
-    log('Credits:', credits, 'are not enough to buy a ship');
+    console.log('Credits:', credits, 'are not enough to buy a ship');
     process.exit(0);
   }
 
   // Limit 10 drones for now, then save up for a cargo ship
   if (ships.length >= 10) {
-    log('Got 10 mining ships; time to buy a freighter and automate it');
+    console.log('Got 10 mining ships; time to buy a freighter and automate it');
     process.exit(0);
   }
 
@@ -63,13 +62,13 @@ const main = async () => {
   // How many can we buy?
   const numberOfDronesToBuy = Math.floor(credits / price);
   if (numberOfDronesToBuy === 0) {
-    log('Not enough money to buy a drone for', price);
+    console.log('Not enough money to buy a drone for', price);
     process.exit(0);
   }
 
   // Buy them all
   // Does the price change with demand?
-  log('Buying', numberOfDronesToBuy, 'mining drones');
+  console.log('Buying', numberOfDronesToBuy, 'mining drones');
   for (let i = 0; i < numberOfDronesToBuy; i++) {
     await post('/my/ships', {
       shipType: 'SHIP_MINING_DRONE',

@@ -1,13 +1,13 @@
 require('dotenv').config();
 const {
-  log,
-  post,
-  get,
-  timer,
   navigate,
   sellAll,
   travelToNearestMarketplace,
 } = require('./utils');
+const {
+  post,
+  get,
+} = require('./api');
 const {
   getAvailableMiningShips,
   controlShip,
@@ -16,8 +16,10 @@ const {
   restartInactiveShips,
   endPool,
   getOrders,
+  fetchConnectionFromPool,
 } = require('./databaseUtils');
-const { fetchConnectionFromPool } = require('./databaseUtils');
+
+const timer = s => new Promise( res => setTimeout(res, s * 1000));
 
 const nomadLoop = async (symbol) => {
 
@@ -94,7 +96,7 @@ const nomadLoop = async (symbol) => {
       }));
 
     } catch (error) {
-      log(error);
+      console.log(error);
     } finally {
       db.release();
     }

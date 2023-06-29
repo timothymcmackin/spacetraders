@@ -1,9 +1,9 @@
 require('dotenv').config();
 const fs = require('fs');
 const {
-  get,
   navigate,
 } = require('./utils');
+const { get, post } = require('./api');
 const {
 } = require('./databaseUtils');
 const { updateMarketplaceData } = require('./marketplaceUtils');
@@ -15,8 +15,7 @@ const { updateMarketplaceData } = require('./marketplaceUtils');
 
 // Get initial price info for the system
 const surveySystem = async () => {
-  const ships = await get('/my/ships');
-  const ship = ships[0];
+  const ship = await get('/my/ships/' + process.env.ACTIVE_SHIP);
   const { systemSymbol, waypointSymbol } = ship.nav;
   const waypointData = await get(`/systems/${systemSymbol}/waypoints`);
   const waypointsWithMarkets = waypointData.filter(({ traits }) =>
@@ -36,6 +35,7 @@ const surveySystem = async () => {
       await navigate(ship, waypointToVisit.symbol, 'to survey');
     }
   }
+  console.log('Done surveying.');
 
 }
 

@@ -1,11 +1,11 @@
 require('dotenv').config();
 const { updateMarketplaceData, endPool } = require('./databaseUtils');
 const {
-  log,
   post,
   get,
-  timer,
 } = require('./utils');
+
+const timer = s => new Promise( res => setTimeout(res, s * 1000));
 
 const getWaypointPrices = async () => {
   // const waypointsInSystem = await get('/systems/X1-YU85/waypoints');
@@ -14,7 +14,7 @@ const getWaypointPrices = async () => {
   //     traits.some(({ symbol }) => symbol === 'MARKETPLACE')
   //   )
   //   .map(({ symbol }) => symbol);
-  // log(waypointsWithMarketplaces);
+  // console.log(waypointsWithMarketplaces);
   /*
   [
     'X1-YU85-99640B',
@@ -39,7 +39,7 @@ const updateWaypointPrices = async (systemSymbol, waypointSymbol) => {
   endPool();
 }
 
-get('/my/ships/PINCKNEY-1')
-  .then((ship) =>
-    updateWaypointPrices(ship.nav.systemSymbol, ship.nav.waypointSymbol)
-  );
+// get('/my/ships/PINCKNEY-1')
+//   .then((ship) =>
+//     updateWaypointPrices(ship.nav.systemSymbol, ship.nav.waypointSymbol)
+//   );

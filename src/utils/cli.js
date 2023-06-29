@@ -7,6 +7,7 @@ const {
   post,
   get,
 } = require('./api');
+const { endPool } = require('./databaseUtils');
 const argv = require('minimist')(process.argv.slice(2));
 
 /* minimist:
@@ -33,12 +34,20 @@ const main = async () => {
   const cmd = argv['_'][0];
   switch (cmd) {
     case 'ship':
-      console.log(await get('/my/ships/' + ship.symbol));
+      console.log(JSON.stringify((await get('/my/ships/' + ship.symbol)), null, 2));
       break;
 
     case 'navigate':
       console.log('Navigating', ship.symbol, 'to', argv['_'][1]);
       await navigate(ship, argv['_'][1], 'manual navigation');
+      break;
+
+    case 'dock':
+      await post('/my/ships/' + ship.symbol + '/dock');
+      break;
+
+    case 'orbit':
+      await post('/my/ships/' + ship.symbol + '/orbit');
       break;
 
     case 'jump':
@@ -53,10 +62,10 @@ const main = async () => {
       console.log(await get(`/systems/${ship.nav.systemSymbol}/waypoints`));
       break;
 
-      case 'waypoint':
-        waypoint = await get(`/systems/${getSystemFromWaypoint(argv['_'][1])}/waypoints/${argv['_'][1]}`);
-        console.log(JSON.stringify(waypoint, null, 2));
-        break;
+    case 'waypoint':
+      waypoint = await get(`/systems/${getSystemFromWaypoint(argv['_'][1])}/waypoints/${argv['_'][1]}`);
+      console.log(JSON.stringify(waypoint, null, 2));
+      break;
 
     case 'marketplace':
       waypoint = await get(`/systems/${getSystemFromWaypoint(argv['_'][1])}/waypoints/${argv['_'][1]}/market`);
@@ -80,6 +89,7 @@ const main = async () => {
       break;
   }
   console.log('done.');
+  endPool();
   process.exit(0);
 }
 main();

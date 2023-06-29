@@ -4,7 +4,7 @@ const {
   get,
   shipCacheFileName,
   navigate,
-} = require('./utils');
+} = require('./utils/utils');
 
 const commandShipSymbol = 'PINCKNEY-1';
 

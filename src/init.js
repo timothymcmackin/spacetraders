@@ -2,11 +2,11 @@ require('dotenv').config();
 const fs = require('fs');
 const {
   navigate,
-} = require('./utils');
+} = require('./utils/utils');
 const { get, post } = require('./api');
 const {
 } = require('./databaseUtils');
-const { updateMarketplaceData } = require('./marketplaceUtils');
+const { updateMarketplaceData } = require('./utils/marketplaceUtils');
 
 // Get a new account started because I messed up the last one
 // const init = async () => {

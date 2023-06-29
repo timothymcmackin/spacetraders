@@ -1,7 +1,7 @@
 require('dotenv').config();
 const {
   navigate,
-  // sellAll,
+  getSystemFromWaypoint,
 } = require('./utils');
 const {
   post,
@@ -51,6 +51,16 @@ const main = async () => {
     case 'waypoints':
       ship = await get('/my/ships/' + ship.symbol);
       console.log(await get(`/systems/${ship.nav.systemSymbol}/waypoints`));
+      break;
+
+      case 'waypoint':
+        waypoint = await get(`/systems/${getSystemFromWaypoint(argv['_'][1])}/waypoints/${argv['_'][1]}`);
+        console.log(JSON.stringify(waypoint, null, 2));
+        break;
+
+    case 'marketplace':
+      waypoint = await get(`/systems/${getSystemFromWaypoint(argv['_'][1])}/waypoints/${argv['_'][1]}/market`);
+      console.log(JSON.stringify(waypoint, null, 2));
       break;
 
     case 'systems':

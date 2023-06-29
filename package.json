@@ -5,10 +5,10 @@
   "main": "index.js",
   "license": "MIT",
   "scripts": {
-    "miningByTick": "node ./miningByTick.js",
-    "buyingNewShipsByTick": "node ./buyingNewShipsByTick.js",
-    "cli": "node ./cli.js",
-    "findCircularError": "node ./findCircularError.js"
+    "miningByTick": "node ./src/miningByTick.js",
+    "buyingNewShipsByTick": "node ./src/buyingNewShipsByTick.js",
+    "cli": "node ./src/utils/cli.js",
+    "findCircularError": "node ./src/findCircularError.js"
   },
   "dependencies": {
     "axios": "^1.4.0",

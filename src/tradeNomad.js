@@ -3,11 +3,11 @@ const {
   navigate,
   sellAll,
   travelToNearestMarketplace,
-} = require('./utils');
+} = require('./utils/utils');
 const {
   post,
   get,
-} = require('./api');
+} = require('./utils/api');
 const {
   getAvailableMiningShips,
   controlShip,
@@ -17,7 +17,7 @@ const {
   endPool,
   getOrders,
   fetchConnectionFromPool,
-} = require('./databaseUtils');
+} = require('./utils/databaseUtils');
 
 const timer = s => new Promise( res => setTimeout(res, s * 1000));
 
@@ -69,19 +69,19 @@ const nomadLoop = async (symbol) => {
       // returns [{ tradeGoodSymbol, volume, totalSalePrice, targetWaypoint }]
       profitPerItem = await Promise.all(howMuchICanAfford.map(async ({ tradeGoodSymbol, volume, purchasePrice }) => {
         // Get the best sale price for each item
-        const maxDataQuery = `select max(m.sellPrice), m.waypointSymbol
-          from marketplaceData as m
-          inner join waypoints as w
-          on m.waypointSymbol = w.waypointSymbol
-          where m.symbol = "${tradeGoodSymbol}" and w.waypointSymbol != "${ship.nav.waypointSymbol}"`; // Ignore dead ends
+        const maxDataQuery = `select max(sellPrice), waypointSymbol
+          from marketplaceData
+          where symbol = "${tradeGoodSymbol}" and waypointSymbol != "${ship.nav.waypointSymbol}"`;
         const maxData = await db.query(maxDataQuery);
-        if (!maxData[0]['max(m.sellPrice)']) {
+        if (!maxData[0]['max(sellPrice)']) {
           return {
             tradeGoodSymbol,
             totalProfit: 0,
           };
         }
-        const totalSalePrice = Math.min(volume, availableCargoSpace) * maxData[0]['max(m.sellPrice)'];
+        // Get number available
+        const numberAvailable = tradeGoods.find(({ symbol }) => symbol === tradeGoodSymbol).tradeVolume;
+        const totalSalePrice = Math.min(volume, availableCargoSpace, numberAvailable) * maxData[0]['max(sellPrice)'];
         const volumeToBuy = Math.min(volume, availableCargoSpace);
         const totalCost = volumeToBuy * purchasePrice;
         const totalProfit = totalSalePrice - totalCost;
@@ -107,7 +107,7 @@ const nomadLoop = async (symbol) => {
     });
 
     if (whatToBuyAndDo.totalProfit > 0) {
-      console.log(`${ship.symbol} is going to buy ${whatToBuyAndDo.volume} of ${whatToBuyAndDo.tradeGoodSymbol} for a projected profit of ${whatToBuyAndDo.totalProfit}.`);
+      console.log(`${ship.symbol} is going to buy ${whatToBuyAndDo.volume} of ${whatToBuyAndDo.tradeGoodSymbol} and take it to ${whatToBuyAndDo.targetWaypoint} for a projected profit of ${whatToBuyAndDo.totalProfit} minus fuel cost.`);
 
       // Buy that many
       // Later we can try to fill all the cargo holds; feels like a reduce to me
@@ -133,6 +133,7 @@ const nomadLoop = async (symbol) => {
         db = await fetchConnectionFromPool();
         const oldDeadEndCount = await db.query(`select deadEnd from waypoints where waypointSymbol = "${ship.nav.waypointSymbol}"`);
         const newDeadEndCount = 1 + oldDeadEndCount[0]['deadEnd'];
+        // TODO keep waypoints table updated when we travel; not currently adding waypoints to the table when we jump to a new system
         await db.query(`update waypoints set deadEnd = ${newDeadEndCount} where waypointSymbol = "${ship.nav.waypointSymbol}"`);
       } catch (error) {
         console.log(error);
@@ -144,7 +145,7 @@ const nomadLoop = async (symbol) => {
       let waypointSymbolsFromDb;
       try {
         db = await fetchConnectionFromPool();
-        const waypointDataFromDatabase = await db.query(`select waypointSymbol from waypoints where marketplace is true and waypointSymbol != ${ship.nav.waypointSymbol}`); // and deadEnd < 1
+        const waypointDataFromDatabase = await db.query(`select waypointSymbol from marketplaceData where waypointSymbol != ${ship.nav.waypointSymbol}`);
         waypointSymbolsFromDb = waypointDataFromDatabase.map((w) => w.waypointSymbol);
       } catch (error) {
         const waypointData = await get(`/systems/${ship.nav.systemSymbol}/waypoints`);

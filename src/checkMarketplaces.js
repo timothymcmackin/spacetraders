@@ -1,9 +1,9 @@
 require('dotenv').config();
-const { updateMarketplaceData, endPool } = require('./databaseUtils');
+const { updateMarketplaceData, endPool } = require('./utils/databaseUtils');
 const {
   post,
   get,
-} = require('./utils');
+} = require('./utils/utils');
 
 const timer = s => new Promise( res => setTimeout(res, s * 1000));
 

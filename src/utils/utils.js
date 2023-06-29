@@ -177,4 +177,5 @@ module.exports = {
   navigate,
   sellAll,
   travelToNearestMarketplace,
+  getSystemFromWaypoint,
 }

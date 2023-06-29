@@ -62,15 +62,17 @@ const getMostprofitableTrip = async (ship) => {
 
     // Calculate total profit for the trip
     const tripProfitData = endpointProfitData.map(({ waypointSymbol, trades }) => {
-      var remainingCargo = availableCargoSpace;
+      var remainingCargoSpace = availableCargoSpace;
       var totalProfit = 0;
       const sortedTrades = trades.sort(tradeComparerByProfitPerItem);
       const transactions = sortedTrades.reduce((prevTrades, oneTrade) => {
         const { symbol, tradeVolume, profitPerItem } = oneTrade;
-        // TODO buy multiple rounds?; price doesn't change that much
-        const howManyToBuy = Math.min(remainingCargo, tradeVolume);
-        totalProfit += howManyToBuy * profitPerItem;
-        remainingCargo -= howManyToBuy;
+        var howManyToBuy = 0;
+        while (remainingCargoSpace > 0) {
+          howManyToBuy += Math.min(remainingCargoSpace, tradeVolume);
+          totalProfit += howManyToBuy * profitPerItem;
+          remainingCargoSpace -= howManyToBuy;
+        }
         if (howManyToBuy > 0) {
           prevTrades.push({ symbol, howManyToBuy });
         }
@@ -171,6 +173,13 @@ const getProfitableCargoToWaypoint = async (sourceWaypointSymbol, targetWaypoint
   }
 }
 
-modole.exports = {
+module.exports = {
   getMostprofitableTrip,
 };
+
+const main = async () => {
+  const bestTrip = await getMostprofitableTrip({ symbol: process.env.ACTIVE_SHIP});
+  return bestTrip;
+}
+main()
+  .then(endPool);

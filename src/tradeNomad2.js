@@ -2,21 +2,14 @@ require('dotenv').config();
 const {
   navigate,
   sellAll,
-  travelToNearestMarketplace,
 } = require('./utils/utils');
 const {
   post,
   get,
 } = require('./utils/api');
 const {
-  getAvailableMiningShips,
-  controlShip,
-  updateShipIsActive,
-  releaseShip,
-  restartInactiveShips,
   endPool,
   getOrders,
-  fetchConnectionFromPool,
   getDifferentSystemJumpgateWaypoint,
 } = require('./utils/databaseUtils');
 const { getMostprofitableTrip, getMostprofitableTripFromSystem } = require('./utils/tradeUtils');
@@ -72,4 +65,3 @@ const main = async (shipSymbol) => {
 
 main(process.env.ACTIVE_SHIP)
   .then(endPool);
-// sellAll(process.env.ACTIVE_SHIP)

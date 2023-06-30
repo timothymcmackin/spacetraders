@@ -268,7 +268,24 @@ const getOrders = async (symbol) => {
     db = await fetchConnectionFromPool();
     const ordersResponse = await db.query(`SELECT orders from ships
       WHERE symbol = "${symbol}"`);
-      return ordersResponse[0].orders;
+    return ordersResponse[0].orders;
+  } catch (error) {
+    console.log(error);
+  } finally {
+    db.release();
+  }
+}
+
+// Couldn';'t find a profitable trade in this system, so get a random jump gate waypoint in a different system
+const getDifferentSystemJumpgateWaypoint = async (currentSystem) => {
+  let db;
+  try {
+    db = await fetchConnectionFromPool();
+    const systemsResponse = await db.query(`SELECT jumpGateWaypoint from systems
+      WHERE systemSymbol != "${currentSystem}"`);
+    const systems = systemsResponse.map(({ jumpGateWaypoint }) => jumpGateWaypoint);
+    const targetWaypoint = systems[Math.floor(Math.random() * systems.length)];
+    return targetWaypoint;
   } catch (error) {
     console.log(error);
   } finally {
@@ -312,4 +329,5 @@ module.exports = {
   endPool,
   fetchConnectionFromPool,
   getOrders,
+  getDifferentSystemJumpgateWaypoint,
 };

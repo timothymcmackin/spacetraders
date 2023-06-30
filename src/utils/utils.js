@@ -1,6 +1,9 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
+const {
+  fetchConnectionFromPool,
+} = require('./databaseUtils');
 
 const { post, get } = require('./api');
 
@@ -20,9 +23,7 @@ const getSystemFromWaypoint = (waypointSymbol) => {
 // Implement pathing later
 const jump = async (ship, systemSymbol) => {
   await post(`/my/ships/${ship.symbol}/orbit`);
-  if (!ship.nav) {
-    ship = await get('/my/ships/' + ship.symbol);
-  }
+  ship = await get('/my/ships/' + ship.symbol);
   if (ship.nav.systemSymbol === systemSymbol) {
     console.log('Already in system', systemSymbol);
     return;
@@ -112,7 +113,7 @@ const navigate = async (ship, waypoint, reason = '', refuel = true) => {
 // Assume we're at a marketplace
 // Be sure to check that they have a market for the good
 const sellAll = async (shipSymbol, dumpUnsold = false) => {
-  const { symbol, nav, cargo } = await get(`/my/ships/${shipSymbol}`);
+  const { nav, cargo } = await get(`/my/ships/${shipSymbol}`);
   const { systemSymbol, waypointSymbol } = nav;
   const { inventory } = cargo;
   if (inventory.length === 0) {
@@ -125,17 +126,26 @@ const sellAll = async (shipSymbol, dumpUnsold = false) => {
   const { tradeGoods } = marketplaceData;
   const thingsWeCanSellHere = tradeGoods.map(({ symbol }) => symbol);
 
+  var totalSalePrice = 0;
   if (inventory.some(({ units }) => units > 0)) {
     // Sell everything
-    // One at a time due to limitations in the API
+    // One good at a time due to limitations in the API
     await inventory.reduce(async (prevPromise, { symbol: materialSymbol, units }) => {
       await prevPromise;
       // Can we sell this here?
       if (thingsWeCanSellHere.includes(materialSymbol)) {
-        return post(`/my/ships/${shipSymbol}/sell`, {
-          symbol: materialSymbol,
-          units,
-        });
+        // limit by tradeVolume
+        var unitsToSell = units;
+        const tradeVolume = tradeGoods.find(({ symbol }) => symbol == materialSymbol).tradeVolume;
+        while (unitsToSell > 0) {
+          const unitsToSellThisTime = Math.min(unitsToSell, tradeVolume);
+          const { transaction } = await post(`/my/ships/${shipSymbol}/sell`, {
+            symbol: materialSymbol,
+            units: unitsToSellThisTime,
+          });
+          totalSalePrice += transaction.totalPrice;
+          unitsToSell -= unitsToSellThisTime;
+        }
       } else {
         // Can't sell here, so dump it
         if (dumpUnsold) {
@@ -148,6 +158,7 @@ const sellAll = async (shipSymbol, dumpUnsold = false) => {
     }, Promise.resolve());
     console.log(shipSymbol, 'sold cargo');
   }
+  return totalSalePrice;
 }
 
 const travelToNearestMarketplace = async (shipSymbol) => {
@@ -169,7 +180,7 @@ const travelToNearestMarketplace = async (shipSymbol) => {
   const targetWaypoint = waypointsWithMarketplaces[Math.floor(Math.random() * waypointsWithMarketplaces.length)];
 
   await post(`/my/ships/${shipSymbol}/orbit`);
-  await navigate(ship, targetWaypoint, 'to sell cargo');
+  await navigate(ship, targetWaypoint, 'nearest marketplace');
 }
 
 module.exports = {

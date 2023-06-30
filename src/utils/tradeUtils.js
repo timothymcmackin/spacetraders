@@ -7,12 +7,71 @@ const {
   fetchConnectionFromPool,
 } = require('./databaseUtils');
 
+// Find out the most profitable trip to take from any marketplace in this system
+// returns:
+/*
+{
+  sourceWaypointSymbol: "X1-YU85-81074E",
+  targetWaypointSymbol: "X1-CQ5-51743B",
+  totalProfit: 5040,
+  transactions: [
+    {
+      symbol: "PLATINUM",
+      howManyToBuy: 30,
+    },
+  ],
+}
+*/
+const getMostprofitableTripFromSystem = async (shipSymbol, sourceSystemSymbol) => {
+  // Initial information
+  const ship = await get('/my/ships/' + shipSymbol);
+  if (!sourceSystemSymbol) {
+    sourceSystemSymbol = ship.nav.systemSymbol;
+  }
+
+  // Get all the marketplaces in the system
+  const waypointData = await get(`/systems/${sourceSystemSymbol}/waypoints`);
+  const waypointsWithMarketplaces = waypointData.filter(({ traits }) =>
+    traits.some(({ symbol }) => symbol === 'MARKETPLACE'))
+    .map(({ symbol }) => symbol);
+
+  // Find the best trip from each of those waypoints with marketplaces
+  // Use reduce to avoid overloading the database pool
+  const bestTripFromEachWaypoint = await waypointsWithMarketplaces.reduce(async (prevListPromise, waypointSymbol) => {
+    const prevList = await prevListPromise;
+    const bestTrip = await getMostprofitableTripFromWaypoint(ship, waypointSymbol);
+    if (bestTrip.waypointSymbol && bestTrip.transactions) {
+      prevList.push({
+        sourceWaypointSymbol: waypointSymbol,
+        targetWaypointSymbol: bestTrip.waypointSymbol,
+        totalProfit: bestTrip.totalProfit,
+        transactions: bestTrip.transactions,
+      });
+    }
+    return prevList;
+  }, Promise.resolve([]));
+
+  if (bestTripFromEachWaypoint.length === 0) {
+    // No profitable trips from this waypoint
+    return;
+  }
+  const bestTripFromAnyWaypointInSystem = bestTripFromEachWaypoint.reduce((prevBest, oneTrip) =>
+    oneTrip.totalProfit > prevBest.totalProfit ? oneTrip : prevBest
+  );
+
+  return bestTripFromAnyWaypointInSystem;
+}
+
 // Find out the most profitable one destination sales trip to take
-const getMostprofitableTrip = async (ship) => {
-  if (!ship.cargo || !ship.nav) {
+// Default is from the ship's curernt waypoint
+const getMostprofitableTripFromWaypoint = async (ship, sourceWaypointSymbol) => {
+  // Initial information
+  if (!ship.cargo || !ship.nav || !sourceWaypointSymbol) {
     ship = await get('/my/ships/' + ship.symbol);
   }
-  const { waypointSymbol: sourceWaypointSymbol } = ship.nav;
+  if (!sourceWaypointSymbol) {
+    sourceWaypointSymbol = ship.nav.waypointSymbol;
+  }
   const { capacity, units: currentlyFilled } = ship.cargo;
   const availableCargoSpace = capacity - currentlyFilled;
   // const availableCargoSpace = 60; // testing
@@ -68,10 +127,12 @@ const getMostprofitableTrip = async (ship) => {
       const transactions = sortedTrades.reduce((prevTrades, oneTrade) => {
         const { symbol, tradeVolume, profitPerItem } = oneTrade;
         var howManyToBuy = 0;
+        var buyThisTransaction = 0;
         while (remainingCargoSpace > 0) {
-          howManyToBuy += Math.min(remainingCargoSpace, tradeVolume);
-          totalProfit += howManyToBuy * profitPerItem;
-          remainingCargoSpace -= howManyToBuy;
+          buyThisTransaction = Math.min(remainingCargoSpace, tradeVolume);
+          totalProfit += buyThisTransaction * profitPerItem;
+          remainingCargoSpace -= buyThisTransaction;
+          howManyToBuy += buyThisTransaction;
         }
         if (howManyToBuy > 0) {
           prevTrades.push({ symbol, howManyToBuy });
@@ -98,6 +159,10 @@ const getMostprofitableTrip = async (ship) => {
       ],
     }]
     */
+    // If nothing makes a profit
+    if (endpointProfitData.length === 0) {
+      return {};
+    }
     const bestTrip = tripProfitData.reduce((prevBest, current) => {
       if (current.totalProfit > prevBest.totalProfit) {
         return current;
@@ -174,12 +239,15 @@ const getProfitableCargoToWaypoint = async (sourceWaypointSymbol, targetWaypoint
 }
 
 module.exports = {
-  getMostprofitableTrip,
+  getMostprofitableTripFromWaypoint,
+  getMostprofitableTripFromSystem,
 };
 
-const main = async () => {
-  const bestTrip = await getMostprofitableTrip({ symbol: process.env.ACTIVE_SHIP});
+const test = async () => {
+  // const bestTrip = await getMostprofitableTripFromWaypoint({ symbol: process.env.ACTIVE_SHIP},  'X1-YU85-99640B');
+  // return bestTrip;
+  const bestTrip = await getMostprofitableTripFromSystem(process.env.ACTIVE_SHIP);
   return bestTrip;
 }
-main()
-  .then(endPool);
+// test()
+//   .then(endPool);

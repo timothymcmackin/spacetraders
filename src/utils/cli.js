@@ -2,6 +2,7 @@ require('dotenv').config();
 const {
   navigate,
   getSystemFromWaypoint,
+  sellAll,
 } = require('./utils');
 const {
   post,
@@ -42,6 +43,10 @@ const main = async () => {
       await navigate(ship, argv['_'][1], 'manual navigation');
       break;
 
+    case 'agent':
+      console.log(await get('/my/agent'));
+      break;
+
     case 'dock':
       await post('/my/ships/' + ship.symbol + '/dock');
       break;
@@ -72,6 +77,10 @@ const main = async () => {
       console.log(JSON.stringify(waypoint, null, 2));
       break;
 
+    case 'sellAll':
+      await sellAll(ship.symbol);
+      break;
+
     case 'systems':
       console.log(JSON.stringify(await get(`/systems`), null, 2));
       break;
@@ -86,6 +95,7 @@ const main = async () => {
       break;
 
     default:
+      console.error("Didn't recognize that command.");
       break;
   }
   console.log('done.');

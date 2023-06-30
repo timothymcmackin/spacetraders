@@ -3,12 +3,10 @@ const mariadb = require('mariadb');
 const flatten = require('lodash/flatten');
 const {
   get,
-} = require('./utils');
+} = require('./api');
 
-const timer = s => new Promise( res => setTimeout(res, s * 1000));
-
-// https://github.com/sidorares/node-mysql2
 // connection never releases with this method
+// Have to end the pool at the end of the main process
 const pool = mariadb.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -32,41 +30,19 @@ async function fetchConnectionFromPool() {
   return conn;
 }
 
-// Returns Promise
-const getConnection = () => pool.createConnection({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    rowsAsArray: true,
-});
-
-// Set up the database
-// Assumes that there is a database but it's currently empty
-const initDatabaseFromPool = async () => {
-  // let connection;
-  try {
-    // connection = await pool.getConnection();
-    // const currentTables = await connection.query('SHOW TABLES');
-    // console.log(currentTables);
-  } catch (error) {
-    console.log(error);
-  } finally {
-    // if (connection) return connection.release(); //release to pool
-  }
-}
-
 // Set up the database
 // Assumes that there is a database but it's currently empty
 const initDatabase = async () => {
   let db;
   try {
     db = await fetchConnectionFromPool();
-    // const currentTables = flatten(await db.query('SHOW TABLES'));
+    const currentTables = flatten(await db.query('SHOW TABLES'))
+      .map(({Tables_in_spacetraders}) => Tables_in_spacetraders);
 
-    // Create a table to keep track of mining ships
-    await db.query('DROP TABLE ships')
-      .catch(); // Do nothing
+    // Create a table to keep track of ships
+    if (currentTables.includes('ships')) {
+      await db.query('DROP TABLE ships');
+    }
     // Should use a date data type for lastActive
     const createShipsTable = `CREATE TABLE ships (
       symbol varchar(255) NOT NULL,
@@ -77,16 +53,14 @@ const initDatabase = async () => {
       PRIMARY KEY (symbol)
     )`;
     await db.query(createShipsTable);
-
-    // Add ships
     const shipData = await get('/my/ships');
-    // const shipData = require('./cache/ships.json');
     const ships = shipData.map(({ symbol, registration, cargo }) => ({
         symbol,
         role: registration.role,
         cargoCapacity: cargo.capacity,
       }));
     // console.log(ships);
+    // Add ships
     await db.beginTransaction();
     // Maybe one at a time? Instead of mapping to an array of promises?
     await ships.reduce(async (prevPromise, {symbol, role, cargoCapacity}) => {
@@ -95,8 +69,10 @@ const initDatabase = async () => {
     }, Promise.resolve());
     await db.commit();
 
+    if (currentTables.includes('marketplaceData')) {
+      await db.query('DROP TABLE marketplaceData');
+    }
     // Clear marketplace data
-    await db.query(`DROP TABLE marketplaceData`);
     await db.query(`CREATE TABLE marketplaceData (
       systemSymbol varchar(255) NOT NULL,
       waypointSymbol varchar(255) NOT NULL,
@@ -105,42 +81,59 @@ const initDatabase = async () => {
       supply varchar(255),
       purchasePrice int,
       sellPrice int,
-      PRIMARY KEY (systemSymbol, waypointSymbol, symbol)`);
+      PRIMARY KEY (systemSymbol, waypointSymbol, symbol))`);
 
-      // Clear waypoint data
-      await db.query(`DROP TABLE waypoints`);
-      await db.query(`CREATE TABLE waypoints (
-        systemSymbol varchar(255) NOT NULL,
-        waypointSymbol varchar(255) NOT NULL,
-        deadEnd int DEFAULT 0,
-        PRIMARY KEY (systemSymbol, waypointSymbol))`);
+    if (currentTables.includes('jumpPaths')) {
+      await db.query('DROP TABLE jumpPaths');
+    }
+    // Where you can go from each jump gate
+    await db.query(`CREATE TABLE jumpPaths (
+      id int(11) NOT NULL AUTO_INCREMENT,
+      systemA varchar(255) DEFAULT NULL,
+      systemB varchar(255) DEFAULT NULL,
+      PRIMARY KEY (id))`);
 
-      // Clear system data
-      await db.query(`DROP TABLE systems`);
-      await db.query(`CREATE TABLE systems (
-        systemSymbol varchar(255) NOT NULL,
-        PRIMARY KEY (systemSymbol))`);
-      await db.query(`DROP TABLE jumpPaths`);
-      await db.query(`CREATE TABLE jumpPaths (
-        id int NOT NULL AUTO_INCREMENT,
-        systemA varchar(255),
-        systemB varchar(255),
-        PRIMARY KEY (id),
-        FOREIGN KEY (systemA) REFERENCES systems(systemSymbol),
-        FOREIGN KEY (systemB) REFERENCES systems(systemSymbol)
-        )`);
+    if (currentTables.includes('waypoints')) {
+      await db.query('DROP TABLE waypoints');
+    }
+    await db.query(`CREATE TABLE waypoints (
+      systemSymbol varchar(255) NOT NULL,
+      waypointSymbol varchar(255) NOT NULL,
+      deadEnd int DEFAULT 0,
+      marketplace Boolean,
+      PRIMARY KEY (systemSymbol, waypointSymbol))`);
 
+    // Trade records
+    if (currentTables.includes('transactions')) {
+      await db.query('DROP TABLE transactions');
+    }
+    await db.query(`CREATE TABLE transactions(
+      id int NOT NULL AUTO_INCREMENT,
+      purchaseWaypoint varchar(255) NOT NULL,
+      saleWaypoint varchar(255) NOT NULL,
+      tradeGood varchar(255) NOT NULL,
+      estimatedprofitPerItem int NOT NULL,
+      actualProfitPerItem int NOT NULL,
+      units int,
+      PRIMARY KEY (id))
+    `);
 
+    if (currentTables.includes('systems')) {
+      await db.query('DROP TABLE systems');
+    }
+    await db.query(`CREATE TABLE systems (
+      systemSymbol varchar(255) NOT NULL,
+      jumpgateWaypoint varchar(255) NOT NULL,
+      PRIMARY KEY (systemSymbol))`);
 
   } catch (error) {
     console.log(error);
   } finally {
-    db.end(); // No need to await this or return it; it'll close eventually, I think, or is it better to wait for it to close?
+    db.end();
   }
-
 }
 
-// Returns ['PINCKNEY-1', 'PINCKNEY-2']
+// Returns ['SHIP-1', 'SHIP-2']
 const getAvailableMiningShips = async () => {
   let db, availableMiningShips;
   try {
@@ -148,6 +141,20 @@ const getAvailableMiningShips = async () => {
     availableMiningShips = flatten(await db.query('SELECT symbol FROM ships WHERE role = "EXCAVATOR" and lastActive IS NULL'));
     // console.log(availableMiningShips);
     return availableMiningShips.map(({ symbol }) => symbol);
+  } catch (error) {
+    console.log(error);
+  } finally {
+    db.release();
+  }
+}
+
+// Get ships with specific orders
+const getShipsByOrders = async (orders) => {
+  let db;
+  try {
+    db = await fetchConnectionFromPool();
+    ships = flatten(await db.query(`SELECT symbol FROM ships WHERE orders = "${orders}" and lastActive IS NULL`));
+    return ships.map(({ symbol }) => symbol);
   } catch (error) {
     console.log(error);
   } finally {
@@ -313,32 +320,19 @@ const getAllSystemsAndJumpGates = async () => {
   }
 }
 
-const test = async () => {
-  console.log('test start');
-  await controlShip('PINCKNEY-3');
-  console.log('ok');
-  await timer(22);
-  await controlShip('PINCKNEY-4');
-  console.log('ok');
-  await timer(22);
-  await controlShip('PINCKNEY-5');
-  console.log('ok');
-  await timer(22);
-  await releaseShip('PINCKNEY-5');
-  console.log('ok');
-  await updateShipIsActive('PINCKNEY-4');
-  console.log('ok');
-  const restartedShips = await restartInactiveShips(1, 'EXCAVATOR');
-  console.log('ok');
-  if (restartedShips !== 1) {
-    console.log('Test failed');
+const singleQuery = async (queryString) => {
+  let db;
+  try {
+    db = await fetchConnectionFromPool();
+    return await db.query(singleQuery);
+  } catch (error) {
+    console.log(error);
+  } finally {
+    db.release();
   }
-  await restartInactiveShips(0, 'EXCAVATOR');
-  console.log('test done');
 }
 
 module.exports = {
-  test,
   initDatabase,
   getAvailableMiningShips,
   getActiveTimeMinutes,
@@ -351,4 +345,9 @@ module.exports = {
   getOrders,
   getDifferentSystemJumpgateWaypoint,
   getAllSystemsAndJumpGates,
+  singleQuery,
+  getShipsByOrders,
 };
+
+initDatabase()
+  .then(endPool)

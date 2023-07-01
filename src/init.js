@@ -38,5 +38,3 @@ const surveySystem = async () => {
   console.log('Done surveying.');
 
 }
-
-surveySystem();

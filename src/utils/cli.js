@@ -37,6 +37,9 @@ const main = async () => {
     case 'ship':
       console.log(JSON.stringify((await get('/my/ships/' + ship.symbol)), null, 2));
       break;
+    case 'ships':
+      console.log(JSON.stringify((await get('/my/ships')), null, 2));
+      break;
 
     case 'navigate':
       console.log('Navigating', ship.symbol, 'to', argv['_'][1]);

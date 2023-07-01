@@ -40,6 +40,7 @@ const main = async (shipSymbol) => {
 }
 
 const tradeLoop = async (ship) => {
+  // TODO track transactions in transactions table
   var sourceWaypointSymbol, targetWaypointSymbol, totalProfit, transactions;
   // Catch case where there are no profitable trips from this system
   var trip;

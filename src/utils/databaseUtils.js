@@ -324,7 +324,7 @@ const singleQuery = async (queryString) => {
   let db;
   try {
     db = await fetchConnectionFromPool();
-    return await db.query(singleQuery);
+    return await db.query(queryString);
   } catch (error) {
     console.log(error);
   } finally {
@@ -349,5 +349,5 @@ module.exports = {
   getShipsByOrders,
 };
 
-initDatabase()
-  .then(endPool)
+// initDatabase()
+//   .then(endPool)

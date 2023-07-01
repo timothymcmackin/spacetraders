@@ -14,11 +14,17 @@ const {
 } = require('./utils/databaseUtils');
 const { updateMarketplaceData } = require('./utils/marketplaceUtils');
 
+const timer = s => new Promise( res => setTimeout(res, s * 1000));
+
 // Satellites are super slow!
 
+// Globals!
 // [ { systemSymbol: "", waypointSymbols: [] }]
 var unvisitedMarketWaypointSymbols = [];
-var unvisitedSytemSymbolss = [];
+var unvisitedJumpgateWaypointSymbols = [];
+var unvisitedSytemSymbols = [];
+var shipsInTravel = [];
+var inactiveShips = [];
 
 const survey = async () => {
   const shipSymbols = await getShipsByOrders('survey');
@@ -52,10 +58,10 @@ const survey = async () => {
   //   },
   // ]
   const systemsAndJumpgates = currentlyStaffedSystems.map((oneSystemSymbol) => {
-    const jumpGateWaypoint = allWaypointData.find(({ type }) => type === 'JUMP_GATE');
+    const jumpgateWaypoint = allWaypointData.find(({ type }) => type === 'JUMP_GATE');
     return {
       systemSymbol: oneSystemSymbol,
-      jumpgateWaypoint: jumpGateWaypoint.symbol,
+      jumpgateWaypoint: jumpgateWaypoint.symbol,
     }
   });
 
@@ -66,6 +72,9 @@ const survey = async () => {
       VALUES ("${systemSymbol}", "${jumpgateWaypoint}")`;
     await singleQuery(updateString);
   }, Promise.resolve());
+
+  // Add the jump gates to check
+  unvisitedJumpgateWaypointSymbols = systemsAndJumpgates.map(({ jumpgateWaypoint }) => jumpgateWaypoint);
 
   // Update database with initial info about waypoints
   await allWaypointData.reduce(async (prevPromise, waypoint) => {
@@ -99,12 +108,43 @@ const survey = async () => {
     .map(({ symbol }) => symbol);
 
 
-
-  console.log(unvisitedMarketWaypointSymbols);
-
   // Now the hard part: send each ship off to check out the markets and see what systems they can jump to
+  inactiveShips = [...shipSymbols];
+  // How the hell?
+
+  // Globals we're using in case we need to refer to them in another function:
+  /*
+  var unvisitedMarketWaypointSymbols = [];
+  var unvisitedJumpgateWaypointSymbols = [];
+  var unvisitedSytemSymbols = [];
+  var shipsInTravel;
+  var inactiveShips;
+  */
+  var keepGoing = true;
+  while (keepGoing) {
+    // If there are no inactive ships there's nothing to do at this point
+    if (inactiveShips.length > 0) {
+      // Send inactive ships to an unvisited market waypoint
+      while (inactiveShips.length > 0 && unvisitedMarketWaypointSymbols.length > 0) {
+        // place
+
+
+      }
+      // If there are no unvisited waypoints, go to a new system
+      // If there are no unvisited systems, go to a jump gate and see which systems we can go to, add them, and go to one
+      // If there are ships in transit but nowhere for the idle ships to go, wait a few secs and try again
+
+    } else {
+      // no inactive ships
+      await timer(5);
+    }
+
+  }
+  // While there are unvisited waypoints, unvisited systems, unvisited jump gates, or ships in transit
 
 }
+
+
 
 survey()
   .then(endPool);

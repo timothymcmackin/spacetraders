@@ -27,7 +27,7 @@ const get = (path) => api.get(path)
     return result;
   })
   .catch((error) => {
-    console.log(JSON.stringify(error.response.data, null, 2))
+    console.log(JSON.stringify(error.response?.data ? error.response.data : error, null, 2));
   });
 
 const post = (path, body = {}) => api.post(path, body)
@@ -50,7 +50,7 @@ const post = (path, body = {}) => api.post(path, body)
     return result;
   })
   .catch((error) => {
-    console.log(JSON.stringify(error.response.data, null, 2))
+    console.log(JSON.stringify(error.response?.data ? error.response.data : error, null, 2));
   });
 
 module.exports = {

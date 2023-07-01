@@ -91,7 +91,10 @@ const navigate = async (ship, waypoint, reason = '', refuel = true) => {
   // dock
   await post(`/my/ships/${ship.symbol}/dock`);
   //refuel
-  if (refuel) {
+  // If we're at a jump gate, no fuel
+  ship = await get('/my/ships/' + ship.symbol);
+  const { type } = await get(`/systems/${ship.nav.systemSymbol}/waypoints/${ship.nav.waypointSymbol}`);
+  if (refuel && type !== 'JUMP_GATE') {
     const { transaction } = await post(`/my/ships/${ship.symbol}/refuel`);
     console.log(ship.symbol, 'fuel cost', transaction.totalPrice);
   }

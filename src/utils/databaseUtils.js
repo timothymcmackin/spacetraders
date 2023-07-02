@@ -89,8 +89,8 @@ const initDatabase = async () => {
     // Where you can go from each jump gate
     await db.query(`CREATE TABLE jumpPaths (
       id int(11) NOT NULL AUTO_INCREMENT,
-      systemA varchar(255) DEFAULT NULL,
-      systemB varchar(255) DEFAULT NULL,
+      systemA varchar(255),
+      systemB varchar(255),
       PRIMARY KEY (id))`);
 
     if (currentTables.includes('waypoints')) {
@@ -124,6 +124,7 @@ const initDatabase = async () => {
     await db.query(`CREATE TABLE systems (
       systemSymbol varchar(255) NOT NULL,
       jumpgateWaypoint varchar(255) NOT NULL,
+      explored Boolean DEFAULT FALSE,
       PRIMARY KEY (systemSymbol))`);
 
   } catch (error) {

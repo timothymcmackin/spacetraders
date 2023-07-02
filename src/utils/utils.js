@@ -8,6 +8,7 @@ const {
 const { post, get } = require('./api');
 
 const { updateMarketplaceData } = require('./marketplaceUtils');
+const { getPathToSystem } = require('./pathingUtils');
 
 const timer = s => new Promise( res => setTimeout(res, s * 1000));
 
@@ -20,7 +21,6 @@ const getSystemFromWaypoint = (waypointSymbol) => {
 }
 
 // Currently everything is one jump away
-// Implement pathing later
 const jump = async (ship, systemSymbol) => {
   await post(`/my/ships/${ship.symbol}/orbit`);
   ship = await get('/my/ships/' + ship.symbol);
@@ -35,20 +35,32 @@ const jump = async (ship, systemSymbol) => {
   const targetWaypoint = jumpGateWaypoint.symbol;
   await navigate(ship, targetWaypoint, 'to jump gate', false);
 
-  console.log(ship.symbol, 'jumping to', systemSymbol);
-  await post(`/my/ships/${ship.symbol}/orbit`);
-  const { nav } = await post('/my/ships/' + ship.symbol + '/jump', {
-    systemSymbol,
-  });
+  // Get the path of systems to jump to
+  var pathOfJumps = await getPathToSystem(ship.nav.systemSymbol, systemSymbol);
+  // Remove current location
+  pathOfJumps.shift();
 
-  departureTime = Date.parse(nav.route.departureTime);
-  arrivalTime = Date.parse(nav.route.arrival);
+  // Jump loop
+  await pathOfJumps.reduce(async (prevPromise, targetSystem) => {
+    await prevPromise;
 
-  // How long will it take?
-  const waitTime = Math.ceil((arrivalTime - departureTime) / 1000 + 1);
-  console.log(ship.symbol, 'travel time', waitTime, 'seconds');
-  await timer(waitTime);
-  console.log(ship.symbol, 'arrived');
+    console.log(ship.symbol, 'jumping to', targetSystem);
+    await post(`/my/ships/${ship.symbol}/orbit`);
+    const { nav } = await post('/my/ships/' + ship.symbol + '/jump', {
+      targetSystem,
+    });
+
+    const departureTime = Date.parse(nav.route.departureTime);
+    const arrivalTime = Date.parse(nav.route.arrival);
+
+    // How long will it take?
+    const waitTime = Math.ceil((arrivalTime - departureTime) / 1000 + 1);
+    console.log(ship.symbol, 'travel time', waitTime, 'seconds');
+    await timer(waitTime);
+    console.log(ship.symbol, 'arrived after jump');
+
+  }, Promise.resolve());
+
 }
 
 // Send the ship somewhere and resolve when it arrives
@@ -60,7 +72,11 @@ const navigate = async (ship, waypoint, reason = '', refuel = true) => {
   // Are we in the right system?
   const targetSystem = getSystemFromWaypoint(waypoint);
   if (targetSystem !== nav.systemSymbol) {
-    await jump(ship, targetSystem);
+    await jump(ship, targetSystem)
+      .catch(err => {
+        console.error('Jump pathing failed.');
+        console.error(err);
+      });
   }
 
   // Are we already there?

@@ -54,6 +54,10 @@ const main = async () => {
       await post('/my/ships/' + ship.symbol + '/dock');
       break;
 
+    case 'refuel':
+      await post('/my/ships/' + ship.symbol + '/refuel');
+      break;
+
     case 'orbit':
       await post('/my/ships/' + ship.symbol + '/orbit');
       break;
@@ -67,7 +71,7 @@ const main = async () => {
 
     case 'waypoints':
       ship = await get('/my/ships/' + ship.symbol);
-      console.log(await get(`/systems/${ship.nav.systemSymbol}/waypoints`));
+      console.log(JSON.stringify(await get(`/systems/${ship.nav.systemSymbol}/waypoints`), null, 2));
       break;
 
     case 'waypoint':

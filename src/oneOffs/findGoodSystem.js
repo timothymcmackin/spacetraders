@@ -6,10 +6,11 @@ const {
 } = require('../utils/api');
 const { endPool } = require('../utils/databaseUtils');
 
-// Find a system with waypoitns with these traits:
+// Find a system with waypoints with these traits:
 // - SHIPYARD
 // - MARKETPLACE
 // - ASTEROID_FIELD
+// - shipyard sells mining ships
 
 const getGoodSystems = async (shipSymbol) => {
   const ship = await get(`/my/ships/${shipSymbol}`);
@@ -80,7 +81,6 @@ const getSystemsWithinOneJump = async (systemSymbol) => {
  return systemsWithinOneJumpData.map(({ symbol }) => symbol);
 }
 
-// TODO I want mining ships
 const doesSystemHaveTraits = async (systemSymbol) => {
   const thisSystemWaypoints = await get(`/systems/${systemSymbol}/waypoints`);
   var availableShips = [];
@@ -99,7 +99,7 @@ const doesSystemHaveTraits = async (systemSymbol) => {
   const asteroidWaypointData = thisSystemWaypoints.find(({ type }) =>
     type === 'ASTEROID_FIELD'
   );
-  if (marketplaceWaypointData && shipyardWaypointData && asteroidWaypointData) {
+  if (marketplaceWaypointData && shipyardWaypointData && asteroidWaypointData && availableShips.includes('SHIP_MINING_DRONE')) {
     return {
       MARKETPLACE: marketplaceWaypointData,
       SHIPYARD: shipyardWaypointData,

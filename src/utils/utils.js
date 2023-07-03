@@ -20,8 +20,15 @@ const getSystemFromWaypoint = (waypointSymbol) => {
   return `${stringSplit[0]}-${stringSplit[1]}`;
 }
 
-// Currently everything is one jump away
-const jump = async (ship, systemSymbol) => {
+const getSystemJumpGateWaypointSymbol = async (systemSymbol) => {
+  const waypointsInSystem = await get(`/systems/${systemSymbol}/waypoints`);
+  const jumpgateWaypoint = waypointsInSystem.find(({ type }) => type === 'JUMP_GATE');
+  if (jumpgateWaypoint) {
+    return jumpgateWaypoint.symbol;
+  }
+}
+
+const jump = async (ship, systemSymbol, tableName) => {
   await post(`/my/ships/${ship.symbol}/orbit`);
   ship = await get('/my/ships/' + ship.symbol);
   if (ship.nav.systemSymbol === systemSymbol) {
@@ -36,27 +43,22 @@ const jump = async (ship, systemSymbol) => {
   await navigate(ship, targetWaypoint, 'to jump gate', false);
 
   // Get the path of systems to jump to
-  var pathOfJumps = await getPathToSystem(ship.nav.systemSymbol, systemSymbol);
+  var pathOfJumps = await getPathToSystem(ship.nav.systemSymbol, systemSymbol, tableName);
   // Remove current location
   pathOfJumps.shift();
+  console.log('Jump path:', pathOfJumps);
 
   // Jump loop
   await pathOfJumps.reduce(async (prevPromise, targetSystem) => {
     await prevPromise;
 
     console.log(ship.symbol, 'jumping to', targetSystem);
-    await post(`/my/ships/${ship.symbol}/orbit`);
-    const { nav } = await post('/my/ships/' + ship.symbol + '/jump', {
-      targetSystem,
+    const { nav, cooldown } = await post('/my/ships/' + ship.symbol + '/jump', {
+      systemSymbol: targetSystem,
     });
-
-    const departureTime = Date.parse(nav.route.departureTime);
-    const arrivalTime = Date.parse(nav.route.arrival);
-
-    // How long will it take?
-    const waitTime = Math.ceil((arrivalTime - departureTime) / 1000 + 1);
-    console.log(ship.symbol, 'travel time', waitTime, 'seconds');
-    await timer(waitTime);
+    console.log(ship.symbol, 'travel time', cooldown.remainingSeconds + 1, 'seconds');
+    await timer(cooldown.remainingSeconds + 1);
+    await post(`/my/ships/${ship.symbol}/orbit`);
     console.log(ship.symbol, 'arrived after jump');
 
   }, Promise.resolve());
@@ -202,10 +204,15 @@ const travelToNearestMarketplace = async (shipSymbol) => {
   await navigate(ship, targetWaypoint, 'nearest marketplace');
 }
 
+const getRandomElement = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
 module.exports = {
   contractCacheFileName,
   navigate,
+  jump,
   sellAll,
   travelToNearestMarketplace,
   getSystemFromWaypoint,
+  getSystemJumpGateWaypointSymbol,
+  getRandomElement,
 }

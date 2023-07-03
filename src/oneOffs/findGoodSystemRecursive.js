@@ -38,10 +38,10 @@ const getGoodSystemsRecursive = async (systemSymbol, path = [], level = 1) => {
   var systemsToReturn = goodSystems.filter((s) => !!s);
 
   // Do any of these systems have targets that are good?
-  const goodSystemsRecursed = await Promise.all(systemsWithinOneJump.map(({ systemSymbol: recurseSymbol }) =>
+  const goodSystemsRecursed = await Promise.all(systemsWithinOneJump.map((recurseSymbol) =>
     getGoodSystemsRecursive(recurseSymbol, path.concat(systemSymbol), level + 1)
   ));
-  const goodSystemsRecursedToAdd = goodSystemsRecursed.filter((s) => !!s);
+  const goodSystemsRecursedToAdd = goodSystemsRecursed.filter((s) => !!s && s.length > 0);
   if (goodSystemsRecursedToAdd && goodSystemsRecursedToAdd.length) {
     for (const results in goodSystemsRecursedToAdd) {
       if (Object.hasOwnProperty.call(goodSystemsRecursedToAdd, results)) {

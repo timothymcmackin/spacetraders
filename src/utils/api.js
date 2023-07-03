@@ -13,22 +13,48 @@ const api = rateLimit(axios.create({
 );
 
 // Utility functions to get rid of the data:data in every request
-const get = (path) => api.get(path)
-  .then(async (response) => {
-    let { status, data } = response;
-    if (status === 429) {
-      console.log('Rate limit on GET', path);
-      await timer(2 * 60);
-    } else if (!status.toString().startsWith('2')){
-      console.log("ErrorCode:", response?.data?.error?.code);
-      console.log(JSON.stringify(result.error, null, 2))
+const get = async (path) => {
+  var keepGoing = false;
+  const { data: firstResult, status } = await api.get(path);
+  if (status === 429) {
+    console.log('Rate limit on GET', path);
+    await timer(2 * 60);
+  } else if (!status.toString().startsWith('2')){
+    console.log("ErrorCode:", data?.error?.code);
+    console.log(JSON.stringify(result.error, null, 2))
+  }
+  if (firstResult.meta && firstResult.meta.limit < firstResult.meta.total) {
+    keepGoing = true;
+  } else {
+    // No paging needed
+    return firstResult.data;
+  }
+
+  // Paging
+  var returnData = firstResult.data;
+  var currentPage = 1;
+  const { total, limit } = firstResult.meta;
+  var remainingRecords = total - limit;
+  while (keepGoing) {
+    // If there are fewer than or equal to `limit` records left, get only those
+    // and that's the last page
+    var numberOfRecordsToGet;
+    if (remainingRecords <= limit) {
+      // This is the last request needed
+      keepGoing = false;
+      numberOfRecordsToGet = remainingRecords;
+      remainingRecords -= numberOfRecordsToGet;
+    } else {
+      numberOfRecordsToGet = limit;
     }
-    const { data: result } = data;
-    return result;
-  })
-  .catch((error) => {
-    console.log(JSON.stringify(error.response?.data ? error.response.data : error, null, 2));
-  });
+
+    currentPage++;
+    const nextResult = await api.get(`${path}?page=${currentPage}`);
+    returnData = returnData.concat(...nextResult.data.data);
+  }
+
+  return returnData;
+}
 
 const post = (path, body = {}) => api.post(path, body)
   .then(async (response) => {
@@ -55,5 +81,5 @@ const post = (path, body = {}) => api.post(path, body)
 
 module.exports = {
   get,
-  post,
+  post
 }

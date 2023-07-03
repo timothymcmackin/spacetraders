@@ -11,6 +11,8 @@ const {
 const { endPool } = require('./databaseUtils');
 const argv = require('minimist')(process.argv.slice(2));
 
+const timer = s => new Promise( res => setTimeout(res, s * 1000));
+
 /* minimist:
 https://github.com/minimistjs/minimist
 $ node example/parse.js -x 3 -y 4 -n5 -abc --beep=boop foo bar baz
@@ -64,9 +66,10 @@ const main = async () => {
 
     case 'jump':
       console.log('Jumping', ship.symbol, 'to', argv['_'][1]);
-      console.log(await post('/my/ships/' + ship.symbol + '/jump', {
+      const { cooldown } = await post('/my/ships/' + ship.symbol + '/jump', {
         systemSymbol: argv['_'][1],
-      }));
+      });
+      await timer(cooldown.remainingSeconds + 1);
       break;
 
     case 'waypoints':
@@ -93,9 +96,9 @@ const main = async () => {
       break;
 
     case 'cooldown':
-      const cooldown = await get(`/my/ships/${ship.symbol}/cooldown`);
-      if (cooldown) {
-        console.log(cooldown.remainingSeconds, 'remaining');
+      const currentCooldown = await get(`/my/ships/${ship.symbol}/cooldown`);
+      if (currentCooldown) {
+        console.log(currentCooldown.remainingSeconds, 'remaining');
       } else {
         console.log('Ship is ready.')
       }

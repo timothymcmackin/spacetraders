@@ -66,7 +66,7 @@ const jump = async (ship, systemSymbol, tableName) => {
 }
 
 // Send the ship somewhere and resolve when it arrives
-const navigate = async (ship, waypoint, reason = '', refuel = true) => {
+const navigate = async (ship, waypoint, reason = '', refuel = true, tableName) => {
   console.log(ship.symbol, 'navigating to', waypoint, reason);
   // Make sure we're in orbit
   var { nav } = await post(`/my/ships/${ship.symbol}/orbit`);
@@ -74,7 +74,7 @@ const navigate = async (ship, waypoint, reason = '', refuel = true) => {
   // Are we in the right system?
   const targetSystem = getSystemFromWaypoint(waypoint);
   if (targetSystem !== nav.systemSymbol) {
-    await jump(ship, targetSystem)
+    await jump(ship, targetSystem, tableName)
       .catch(err => {
         console.error('Jump pathing failed.');
         console.error(err);

@@ -5,6 +5,7 @@ const {
   sellAll,
   survey,
   extract,
+  extractUntilFull,
 } = require('./utils');
 const {
   post,
@@ -105,6 +106,11 @@ const main = async () => {
     case 'extract':
       console.log('extracting')
       await extract(ship.symbol);
+      break;
+
+    case 'extractUntilFull':
+      console.log('extracting until full')
+      await extractUntilFull(ship.symbol);
       break;
 
     case 'cooldown':

@@ -99,6 +99,18 @@ const extract = async (shipSymbol) => {
   });
 }
 
+const extractUntilFull = async (shipSymbol) => {
+  const ship = await get('/my/ships/' + shipSymbol);
+  var remainingCapacity = ship.cargo.capacity - ship.cargo.units;
+  while (remainingCapacity > 0) {
+    var { cargo, cooldown } = await extract(shipSymbol);
+    remainingCapacity = cargo.capacity - cargo.units;
+    if (remainingCapacity > 0) {
+      await timer(cooldown.remainingSeconds + 1);
+    }
+  }
+}
+
 const jump = async (ship, systemSymbol, tableName) => {
   await post(`/my/ships/${ship.symbol}/orbit`);
   ship = await get('/my/ships/' + ship.symbol);
@@ -288,4 +300,5 @@ module.exports = {
   getRandomElement,
   survey,
   extract,
+  extractUntilFull,
 }

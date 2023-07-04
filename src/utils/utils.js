@@ -302,8 +302,6 @@ const initSystem = async (systemSymbol) => {
   }, Promise.resolve());
 
 }
-initSystem('X1-YU85')
-  .finally(endPool);
 
 const getRandomElement = (arr) => arr[Math.floor(Math.random() * arr.length)];
 

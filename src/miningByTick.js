@@ -15,7 +15,7 @@ const {
   releaseShip,
   restartInactiveShips,
   endPool,
-} = require('./databaseUtils');
+} = require('./utils/databaseUtils');
 
 const timer = s => new Promise( res => setTimeout(res, s * 1000));
 

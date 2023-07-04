@@ -11,7 +11,7 @@ const {
   post,
   get,
 } = require('./api');
-const { endPool } = require('./databaseUtils');
+const { endPool, updateShipTable } = require('./databaseUtils');
 const argv = require('minimist')(process.argv.slice(2));
 
 const timer = s => new Promise( res => setTimeout(res, s * 1000));
@@ -111,6 +111,11 @@ const main = async () => {
     case 'extractUntilFull':
       console.log('extracting until full')
       await extractUntilFull(ship.symbol);
+      break;
+
+    case 'updateShipTable':
+      console.log('Updating ships table');
+      await updateShipTable();
       break;
 
     case 'cooldown':

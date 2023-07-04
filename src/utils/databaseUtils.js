@@ -307,6 +307,31 @@ const writeSurveys = async (surveys) => {
 
 }
 
+// Keep the ships table updated
+// Could I do this with a map, or would I overload the database connection pool?
+const updateShipTable = async () => {
+  const allShips = await get('/my/ships');
+  return allShips.reduce(async (prevPromise, ship) => {
+    await prevPromise;
+    const {
+      symbol,
+      cargo: {
+        capacity,
+      },
+      registration: {
+        role,
+      },
+    } = ship;
+    // Symbol is the primary key so this returns a zero or  one-element array
+    const existingShipData = await singleQuery(`SELECT symbol, role, cargoCapacity FROM ships
+    where symbol = "${symbol}"`);
+    if (existingShipData.length === 0) {
+      await singleQuery(`INSERT INTO ships (symbol, role, cargoCapacity)
+      VALUES ("${symbol}", "${role}", "${capacity}")`);
+    }
+  }, Promise.resolve());
+}
+
 const endPool = () => {
   pool.end();
 }
@@ -390,6 +415,7 @@ module.exports = {
   singleQuery,
   getShipsByOrders,
   writeSurveys,
+  updateShipTable,
 };
 
 // initDatabase()

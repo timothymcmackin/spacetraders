@@ -5,6 +5,7 @@ const {
   fetchConnectionFromPool,
   singleQuery,
   writeSurveys,
+  endPool,
 } = require('./databaseUtils');
 
 const { post, get } = require('./api');
@@ -287,6 +288,23 @@ const travelToNearestMarketplace = async (shipSymbol) => {
   await navigate(ship, targetWaypoint, 'nearest marketplace');
 }
 
+const initSystem = async (systemSymbol) => {
+  const waypoints = await get('/systems/' + systemSymbol + '/waypoints');
+  const jumpGateWaypointSymbol = waypoints.find(({ type }) => type === 'JUMP_GATE').symbol;
+  await singleQuery(`REPLACE INTO systems (systemSymbol, jumpgateWaypoint)
+  VALUES ("${systemSymbol}", "${jumpGateWaypointSymbol}")`);
+
+  await waypoints.reduce(async (prevPromise, { symbol: waypointSymbol, traits }) => {
+    await prevPromise;
+    const hasMarketplace = traits.some(({ symbol }) => symbol === 'MARKETPLACE');
+    await singleQuery(`REPLACE INTO waypoints (systemSymbol, waypointSymbol, marketplace)
+    VALUES ("${systemSymbol}", "${waypointSymbol}", ${hasMarketplace})`)
+  }, Promise.resolve());
+
+}
+initSystem('X1-YU85')
+  .finally(endPool);
+
 const getRandomElement = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 module.exports = {
@@ -301,4 +319,5 @@ module.exports = {
   survey,
   extract,
   extractUntilFull,
+  initSystem,
 }

@@ -101,7 +101,7 @@ const initDatabase = async () => {
       waypointSymbol varchar(255) NOT NULL,
       deadEnd int DEFAULT 0,
       marketplace Boolean,
-      PRIMARY KEY (systemSymbol, waypointSymbol))`);
+      PRIMARY KEY (waypointSymbol))`);
 
     // Trade records
     if (currentTables.includes('transactions')) {
@@ -139,6 +139,13 @@ const initDatabase = async () => {
       depositSymbol varchar(255),
       size varchar(255),
       PRIMARY KEY (id))`);
+
+    if (currentTables.includes('globalOrders')) {
+      await db.query('DROP TABLE globalOrders');
+    }
+    await db.query(`CREATE TABLE globalOrders (
+      globalOrder varchar(255) NOT NULL,
+      PRIMARY KEY (globalOrder))`);
 
   } catch (error) {
     console.log(error);
@@ -399,6 +406,11 @@ const singleQuery = async (queryString) => {
   }
 }
 
+const getGlobalOrders = async () => {
+  const ordersArray = await singleQuery('SELECT globalOrder FROM globalOrders');
+  return ordersArray.map(({ globalOrder }) => globalOrder);
+}
+
 module.exports = {
   initDatabase,
   getAvailableMiningShips,
@@ -416,6 +428,7 @@ module.exports = {
   getShipsByOrders,
   writeSurveys,
   updateShipTable,
+  getGlobalOrders,
 };
 
 // initDatabase()

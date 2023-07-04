@@ -3,6 +3,8 @@ const {
   navigate,
   getSystemFromWaypoint,
   sellAll,
+  survey,
+  extract,
 } = require('./utils');
 const {
   post,
@@ -93,6 +95,16 @@ const main = async () => {
 
     case 'systems':
       console.log(JSON.stringify(await get(`/systems`), null, 2));
+      break;
+
+    case 'survey':
+      console.log('Surveying.');
+      await survey(ship.symbol);
+      break;
+
+    case 'extract':
+      console.log('extracting')
+      await extract(ship.symbol);
       break;
 
     case 'cooldown':

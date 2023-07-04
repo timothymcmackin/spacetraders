@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const {
   fetchConnectionFromPool,
+  singleQuery,
+  writeSurveys,
 } = require('./databaseUtils');
 
 const { post, get } = require('./api');
@@ -26,6 +28,75 @@ const getSystemJumpGateWaypointSymbol = async (systemSymbol) => {
   if (jumpgateWaypoint) {
     return jumpgateWaypoint.symbol;
   }
+}
+
+// Create a mining survey and write it to the database
+const survey = async (shipSymbol) => {
+  await post(`/my/ships/${shipSymbol}/orbit`);
+  const { surveys } = await post(`/my/ships/${shipSymbol}/survey`)
+    .catch((err) => {
+      console.log('Mining survey failed; is the ship', shipSymbol, 'at a mining location?');
+      console.log(JSON.stringify(err, null, 2));
+    });
+    console.log(JSON.stringify(surveys, null, 2));
+  await writeSurveys(surveys);
+}
+
+const extract = async (shipSymbol) => {
+  const { nav: { waypointSymbol } } = await get(`/my/ships/${shipSymbol}`);
+  // Check for a survey in the database
+  const queryString = `SELECT waypointSymbol, surveySignature, expiration, depositSymbol, size
+  FROM surveys
+  WHERE waypointSymbol = "${waypointSymbol}"`;
+  // How to get these in order?
+  // Currently I'm auto-deleting the older ones from the database, so you should only get one survey
+  const dataWithExpiration = await singleQuery(queryString);
+  const now = new Date();
+  const data = dataWithExpiration.filter(({ expiration }) => {
+    const expDate = Date.parse(expiration);
+    return expDate > now;
+  });
+  if (data.length === 0) {
+    // No survey found
+    return post(`/my/ships/${shipSymbol}/extract`);
+  }
+  // Reconstruct survey object because it's apparently all required?
+  // "surveys": [
+  //   {
+  //     "signature": "string",
+  //     "symbol": "string",
+  //     "deposits": [
+  //       {
+  //         "symbol": "string"
+  //       }
+  //     ],
+  //     "expiration": "2019-08-24T14:15:22Z",
+  //     "size": "SMALL"
+  //   }
+  // Get an array of the survey signatures
+  const surveySignatures = data.reduce((allSigs, { surveySignature }) => {
+    if (!allSigs.includes(surveySignature)) {
+      allSigs.push(surveySignature);
+    }
+    return allSigs;
+  }, []);
+  // Assemble the full object
+  const surveys = surveySignatures.map((oneSurveySignature) => {
+    const matchingDeposits = data.filter(({ surveySignature }) => surveySignature === oneSurveySignature);
+    const deposits = matchingDeposits.map(({ depositSymbol }) => ({
+      symbol: depositSymbol,
+    }));
+    return {
+      signature: oneSurveySignature,
+      symbol: matchingDeposits[0].waypointSymbol,
+      deposits,
+      expiration: matchingDeposits[0].expiration,
+      size: matchingDeposits[0].size,
+    };
+  });
+  return post(`/my/ships/${shipSymbol}/extract`, {
+    surveys,
+  });
 }
 
 const jump = async (ship, systemSymbol, tableName) => {
@@ -215,4 +286,6 @@ module.exports = {
   getSystemFromWaypoint,
   getSystemJumpGateWaypointSymbol,
   getRandomElement,
+  survey,
+  extract,
 }

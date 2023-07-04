@@ -127,6 +127,19 @@ const initDatabase = async () => {
       explored Boolean DEFAULT FALSE,
       PRIMARY KEY (systemSymbol))`);
 
+    if (currentTables.includes('surveys')) {
+      await db.query('DROP TABLE surveys');
+    }
+    // Note that the surveySignature starts with the waypointSymbol
+    await db.query(`CREATE TABLE surveys (
+      id int NOT NULL AUTO_INCREMENT,
+      waypointSymbol varchar(255),
+      surveySignature varchar(255),
+      expiration varchar(255),
+      depositSymbol varchar(255),
+      size varchar(255),
+      PRIMARY KEY (id))`);
+
   } catch (error) {
     console.log(error);
   } finally {
@@ -266,6 +279,34 @@ const restartInactiveShips = async (minutes, role) => {
   }
 }
 
+const writeSurveys = async (surveys) => {
+  let db;
+  try {
+    db = await fetchConnectionFromPool();
+    await db.beginTransaction();
+
+    await surveys.reduce(async (prevPromise, oneSurvey) => {
+      const { signature, deposits, expiration, size, symbol: waypointSymbol } = oneSurvey;
+      // Delete old surveys
+      await db.query(`DELETE FROM surveys WHERE waypointSymbol = "${waypointSymbol}"`);
+      await deposits.reduce(async (nextPrevPromise, { symbol: depositSymbol }) => {
+        await nextPrevPromise;
+        const queryString = `INSERT INTO surveys
+        (waypointSymbol, surveySignature, expiration, depositSymbol, size)
+        VALUES ("${waypointSymbol}","${signature}", "${expiration}", "${depositSymbol}", "${size}")`;
+        return db.query(queryString);
+      }, prevPromise);
+    }, Promise.resolve());
+
+    await db.commit();
+  } catch (error) {
+    console.log(error);
+  } finally {
+    db.release();
+  }
+
+}
+
 const endPool = () => {
   pool.end();
 }
@@ -348,6 +389,7 @@ module.exports = {
   getAllSystemsAndJumpGates,
   singleQuery,
   getShipsByOrders,
+  writeSurveys,
 };
 
 // initDatabase()

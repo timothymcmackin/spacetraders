@@ -1,12 +1,16 @@
 require('dotenv').config();
 const axios = require('axios');
 const rateLimit = require('axios-rate-limit');
+const axiosRetry = require('axios-retry');
 
-const api = rateLimit(axios.create({
+const client = axios.create({
   baseURL: 'https://api.spacetraders.io/v2/',
-  timeout: 5000,
+  timeout: 50000,
   headers: { 'Authorization': `Bearer ${process.env.SPACETRADERS_TOKEN}` },
-}),
+});
+axiosRetry(client, { retries: 3 });
+
+const api = rateLimit(client,
   // Limit to 1 request per second
   // https://github.com/aishek/axios-rate-limit
   { maxRPS: 1}

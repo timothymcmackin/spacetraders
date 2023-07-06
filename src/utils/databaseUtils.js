@@ -147,6 +147,15 @@ const initDatabase = async () => {
       globalOrder varchar(255) NOT NULL,
       PRIMARY KEY (globalOrder))`);
 
+    if (currentTables.includes('credits')) {
+      await db.query('DROP TABLE credits');
+    }
+    await db.query(`CREATE TABLE credits (
+      id int NOT NULL AUTO_INCREMENT,
+      credits int NOT NULL,
+      event varchar(255),
+      PRIMARY KEY (id))`);
+
   } catch (error) {
     console.log(error);
   } finally {
@@ -170,12 +179,17 @@ const getAvailableMiningShips = async () => {
 }
 
 // Get ships with specific orders
-const getShipsByOrders = async (orders) => {
+const getShipsByOrders = async (orders, includeActive = false) => {
   let db;
   try {
     db = await fetchConnectionFromPool();
-    ships = flatten(await db.query(`SELECT symbol FROM ships WHERE orders = "${orders}" and lastActive IS NULL`));
-    return ships.map(({ symbol }) => symbol);
+    if (includeActive) {
+      ships = flatten(await db.query(`SELECT symbol FROM ships WHERE orders = "${orders}"`));
+      return ships.map(({ symbol }) => symbol);
+    } else {
+      ships = flatten(await db.query(`SELECT symbol FROM ships WHERE orders = "${orders}" and lastActive IS NULL`));
+      return ships.map(({ symbol }) => symbol);
+    }
   } catch (error) {
     console.log(error);
   } finally {
@@ -291,19 +305,24 @@ const writeSurveys = async (surveys) => {
   try {
     db = await fetchConnectionFromPool();
     await db.beginTransaction();
-
-    await surveys.reduce(async (prevPromise, oneSurvey) => {
-      const { signature, deposits, expiration, size, symbol: waypointSymbol } = oneSurvey;
-      // Delete old surveys
-      await db.query(`DELETE FROM surveys WHERE waypointSymbol = "${waypointSymbol}"`);
-      await deposits.reduce(async (nextPrevPromise, { symbol: depositSymbol }) => {
-        await nextPrevPromise;
-        const queryString = `INSERT INTO surveys
-        (waypointSymbol, surveySignature, expiration, depositSymbol, size)
-        VALUES ("${waypointSymbol}","${signature}", "${expiration}", "${depositSymbol}", "${size}")`;
-        return db.query(queryString);
-      }, prevPromise);
-    }, Promise.resolve());
+    // TODO catch if surveys is null
+    if (surveys && surveys.length > 0) {
+      await surveys.reduce(async (prevPromise, oneSurvey) => {
+        const { signature, deposits, expiration, size, symbol: waypointSymbol } = oneSurvey;
+        // Delete old surveys
+        await db.query(`DELETE FROM surveys WHERE waypointSymbol = "${waypointSymbol}"`);
+        await deposits.reduce(async (nextPrevPromise, { symbol: depositSymbol }) => {
+          await nextPrevPromise;
+          const queryString = `INSERT INTO surveys
+          (waypointSymbol, surveySignature, expiration, depositSymbol, size)
+          VALUES ("${waypointSymbol}","${signature}", "${expiration}", "${depositSymbol}", "${size}")`;
+          return db.query(queryString);
+        }, prevPromise);
+      }, Promise.resolve());
+    } else {
+      console.log('Got an empty survey:');
+      // console.log(JSON.stringify(survey, null, 2));
+    }
 
     await db.commit();
   } catch (error) {

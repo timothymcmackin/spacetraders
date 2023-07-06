@@ -27,7 +27,7 @@ const miningLocation = 'X1-YU85-76885D';
 
 const main = async () => {
 
-  var scoutLoopPromise, mineLoopPromise, tradeLoopPromise = Promise.resolve();
+  var scoutLoopPromise, mineLoopPromise, tradeLoopPromises = Promise.resolve();
 
   var globalOrders = (await getGlobalOrders());
 
@@ -38,7 +38,7 @@ const main = async () => {
       restartInactiveShips(20, role)
     ));
 
-    const allMinersPromise = getShipsByOrders('mine');
+    // const allMinersPromise = getShipsByOrders('mine');
     const allTradersPromise = getShipsByOrders('mineDelivery');
     const allScoutsPromise = getShipsByOrders('checkMarketplaces');
 
@@ -60,19 +60,43 @@ const main = async () => {
     }
     );
 
+    // Mark traders as active ships in the database
+    const activeTradersPromise = allTradersPromise.then((traderSymbols) => {
+      // Mark available scouts as under control in the database
+      if (traderSymbols && traderSymbols.length > 0) {
+        return traderSymbols.reduce(async (currentListPromise, oneTraderSymbol) => {
+          const currentList = await currentListPromise;
+          const successfullyActivatedShip = await controlShip(oneTraderSymbol);
+          if (successfullyActivatedShip) {
+            // Successfully marked the ship as busy in the database
+            // So this ship is ready for use
+            currentList.push(oneTraderSymbol);
+          }
+          return currentList;
+        }, Promise.resolve([]));
+      } else {
+        return [];
+      }
+    }
+    );
+
     // Send the scouts to marketplaces
-    scoutLoopPromise = scoutLoop(activeScoutsPromise, systemSymbol);
+    // scoutLoopPromise = scoutLoop(activeScoutsPromise, systemSymbol);
 
     // Send miners to mine
     mineLoopPromise = allMinersLoop();
 
-    // TODO send delivery ships to deliver
+    // Send delivery ships to deliver
+    const activeTraders = await activeTradersPromise;
+    if (activeTraders.length > 0) {
+      tradeLoopPromises = activeTraders.map((oneTrader) => tradeLoop(oneTrader, miningLocation));
+    }
 
     await timer(loopWait);
     globalOrders = (await getGlobalOrders());
   }
 
-  await Promise.all([scoutLoopPromise, mineLoopPromise, tradeLoopPromise]);
+  await Promise.all([scoutLoopPromise, mineLoopPromise, ...tradeLoopPromises]);
 }
 
 // Send the scouts around to each marketplace
@@ -118,6 +142,13 @@ const scoutLoop = async (activeScoutsPromise, systemSymbol) => {
 
 // Return scout symbol
 const sendScout = async (shipSymbol, marketplaceTarget) => {
+  // Are we already in transit?
+  const { nav } = await get(`/my/ships/${shipSymbol}`);
+  if (nav.status === 'IN_TRANSIT') {
+    const arrivalTime = Date.parse(nav.route.arrival);
+    const waitTime = Math.ceil((arrivalTime - Date.now()) / 1000 + 1);
+    await timer(waitTime);
+  }
   await navigate({ symbol: shipSymbol }, marketplaceTarget);
   return shipSymbol;
 }
@@ -137,7 +168,7 @@ const allMinersLoop = async () => {
       currentList.push(oneMinerSymbol);
     }
     return currentList;
-  }, Promise.resolve({}));
+  }, Promise.resolve([]));
 
   // Just to be sure
   if (!availableMiners || availableMiners.length === 0) {
@@ -169,12 +200,13 @@ const minerLoop = async (minerSymbol, miningLocation) => {
     }
 
   }
+  await releaseShip(minerSymbol);
 }
 
 const transferLoop = async (minerSymbol, miningLocation) => {
 
   // Get symbols of cargo ships
-  const cargoShipSymbols = await getShipsByOrders('mineDelivery');
+  const cargoShipSymbols = await getShipsByOrders('mineDelivery', true);
   // Are there cargo ships with capacity in the same waypoint?
   var cargoShipsAtWaypoint = await cargoShipSymbols.reduce(async (prevListPromise, oneCargoShipSymbol) => {
     const prevList = await prevListPromise;
@@ -221,12 +253,12 @@ const transferLoop = async (minerSymbol, miningLocation) => {
   }
 }
 
-const deliveryLoop = async (traderSymbol, miningLocation) => {
+const tradeLoop = async (traderSymbol, miningLocation) => {
   // Go to mining location and await cargo
   // Be sure you're in orbit
   await navigate({ symbol: traderSymbol }, miningLocation);
   var { units, capacity } = await get(`/my/ships/${traderSymbol}/cargo`);
-  survey(traderSymbol);
+  await survey(traderSymbol);
   var maxWaitCycles = 20; // Wait 20 minutes for cargo
   while (units < capacity && maxWaitCycles > 0) {
     // Wait for cargo
@@ -241,6 +273,7 @@ const deliveryLoop = async (traderSymbol, miningLocation) => {
   var { inventory } = await get(`/my/ships/${traderSymbol}/cargo`);
   if (inventory.length === 0) {
     // Couldn't get any cargo
+    console.log(traderSymbol, 'closing loop after not getting any cargo');
     return;
   }
 
@@ -249,9 +282,14 @@ const deliveryLoop = async (traderSymbol, miningLocation) => {
   // b/c the starting system has an asteroid field and a market at the same waypoint
   await post(`/my/ships/${traderSymbol}/dock`);
   await sellAll(traderSymbol, true);
+  await get('/my/agent')
+    .then(({ credits }) =>
+      singleQuery(`INSERT INTO credits (credits, event)
+        VALUES ("${credits}", "Selling mined resources")`)
+    );
   await post(`/my/ships/${traderSymbol}/orbit`);
 }
 
-deliveryLoop('KITE-1', miningLocation)
+main()
   .catch(console.error)
   .finally(endPool);

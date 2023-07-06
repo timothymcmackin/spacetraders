@@ -33,18 +33,27 @@ const getSystemJumpGateWaypointSymbol = async (systemSymbol) => {
 
 // Create a mining survey and write it to the database
 const survey = async (shipSymbol) => {
+  const cooldownResponse = await get(`/my/ships/${shipSymbol}/cooldown`);
+  if (cooldownResponse && cooldownResponse.remainingSeconds > 0) {
+    await timer(cooldownResponse.remainingSeconds + 1);
+  }
+
   await post(`/my/ships/${shipSymbol}/orbit`);
-  const { surveys } = await post(`/my/ships/${shipSymbol}/survey`)
+
+  const surveyResponse = await post(`/my/ships/${shipSymbol}/survey`)
     .catch((err) => {
       console.log('Mining survey failed; is the ship', shipSymbol, 'at a mining location?');
       console.log(JSON.stringify(err, null, 2));
     });
-    console.log(JSON.stringify(surveys, null, 2));
-  await writeSurveys(surveys);
+  await writeSurveys(surveyResponse.surveys);
 }
 
 const extract = async (shipSymbol) => {
   const { nav: { waypointSymbol } } = await get(`/my/ships/${shipSymbol}`);
+  const cooldownResponse = await get(`/my/ships/${shipSymbol}/cooldown`);
+  if (cooldownResponse && cooldownResponse.remainingSeconds > 0) {
+    await timer(cooldownResponse.remainingSeconds + 1);
+  }
   // Check for a survey in the database
   const queryString = `SELECT waypointSymbol, surveySignature, expiration, depositSymbol, size
   FROM surveys
@@ -104,10 +113,10 @@ const extractUntilFull = async (shipSymbol) => {
   const ship = await get('/my/ships/' + shipSymbol);
   var remainingCapacity = ship.cargo.capacity - ship.cargo.units;
   while (remainingCapacity > 0) {
-    var { cargo, cooldown } = await extract(shipSymbol);
-    remainingCapacity = cargo.capacity - cargo.units;
+    const extractResponse = await extract(shipSymbol);
+    remainingCapacity = extractResponse?.cargo.capacity - extractResponse?.cargo.units;
     if (remainingCapacity > 0) {
-      await timer(cooldown.remainingSeconds + 1);
+      await timer(extractResponse.cooldown.remainingSeconds || 0 + 1);
     }
   }
 }

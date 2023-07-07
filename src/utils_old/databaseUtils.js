@@ -5,7 +5,9 @@ const {
   get,
 } = require('./api');
 
-const getPool = () => mariadb.createPool({
+// connection never releases with this method
+// Have to end the pool at the end of the main process
+const pool = mariadb.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
@@ -20,20 +22,20 @@ const getPool = () => mariadb.createPool({
   resetAfterUse: true,
 });
 
-// async function fetchConnectionFromPool(pool) {
-//   let conn = await pool.getConnection();
-//   // console.log("Total connections: ", pool.totalConnections());
-//   // console.log("Active connections: ", pool.activeConnections());
-//   // console.log("Idle connections: ", pool.idleConnections());
-//   return conn;
-// }
+async function fetchConnectionFromPool() {
+  let conn = await pool.getConnection();
+  // console.log("Total connections: ", pool.totalConnections());
+  // console.log("Active connections: ", pool.activeConnections());
+  // console.log("Idle connections: ", pool.idleConnections());
+  return conn;
+}
 
 // Set up the database
 // Assumes that there is a database but it's currently empty
-const initDatabase = async (pool) => {
+const initDatabase = async () => {
   let db;
   try {
-    db = await pool.getConnection();
+    db = await fetchConnectionFromPool();
     const currentTables = flatten(await db.query('SHOW TABLES'))
       .map(({Tables_in_spacetraders}) => Tables_in_spacetraders);
 
@@ -162,11 +164,26 @@ const initDatabase = async (pool) => {
   }
 }
 
+// Returns ['SHIP-1', 'SHIP-2']
+const getAvailableMiningShips = async () => {
+  let db, availableMiningShips;
+  try {
+    db = await fetchConnectionFromPool();
+    availableMiningShips = flatten(await db.query('SELECT symbol FROM ships WHERE role = "EXCAVATOR" and lastActive IS NULL'));
+    // console.log(availableMiningShips);
+    return availableMiningShips.map(({ symbol }) => symbol);
+  } catch (error) {
+    console.log(error);
+  } finally {
+    db.release();
+  }
+}
+
 // Get ships with specific orders
-const getShipsByOrders = async (orders, pool, includeActive = false) => {
+const getShipsByOrders = async (orders, includeActive = false) => {
   let db;
   try {
-    db = await pool.getConnection();
+    db = await fetchConnectionFromPool();
     if (includeActive) {
       ships = flatten(await db.query(`SELECT symbol FROM ships WHERE orders = "${orders}"`));
       return ships.map(({ symbol }) => symbol);
@@ -185,10 +202,10 @@ const getShipsByOrders = async (orders, pool, includeActive = false) => {
 // Returns false if the ship is already in use.
 // Maybe should throw an exception instead?
 // I'm just thinking of workers trying to grab the same ship at once.
-const controlShip = async (symbol, pool) => {
+const controlShip = async (symbol) => {
   let db;
   try {
-    db = await pool.getConnection();
+    db = await fetchConnectionFromPool();
     // Check that it is available
     const lastActive = await db.query(`SELECT lastActive FROM ships where symbol = "${symbol}"`);
     if (lastActive[0].lastActive) {
@@ -206,10 +223,10 @@ const controlShip = async (symbol, pool) => {
   }
 }
 
-const updateShipIsActive = async (symbol, pool) => {
+const updateShipIsActive = async (symbol) => {
   let db;
   try {
-    db = await pool.getConnection();
+    db = await fetchConnectionFromPool();
     await db.query(`UPDATE ships SET
       lastActive = "${new Date()}"
       WHERE symbol = "${symbol}"`);
@@ -221,10 +238,10 @@ const updateShipIsActive = async (symbol, pool) => {
   }
 }
 
-const releaseShip = async (symbol, pool) => {
+const releaseShip = async (symbol) => {
   let db;
   try {
-    db = await pool.getConnection();
+    db = await fetchConnectionFromPool();
     // No need to check that it is active?
     await db.query(`UPDATE ships SET
       lastActive = NULL
@@ -237,10 +254,10 @@ const releaseShip = async (symbol, pool) => {
 }
 
 // Check how many minutes since a ship waas updated
-const getActiveTimeMinutes = async (symbol, pool) => {
+const getActiveTimeMinutes = async (symbol) => {
   let db;
   try {
-    db = await pool.getConnection();
+    db = await fetchConnectionFromPool();
     const [lastActive] = flatten(await db.query(`SELECT lastActive FROM ships where symbol = "${symbol}"`));
     const lastActiveDate = Date.parse(lastActive.lastActive);
     const now = new Date();
@@ -254,14 +271,12 @@ const getActiveTimeMinutes = async (symbol, pool) => {
 }
 
 // Flush ships that have been inactive for a while because they are probably the result of a crash.
-const restartInactiveShips = async (minutes, roles, pool) => {
+const restartInactiveShips = async (minutes, role) => {
   let db;
   const now = new Date();
   try {
-    db = await pool.getConnection();
-    const roleMap = roles.map((oneRole) => `"${oneRole}"`).join(',');
-    const ships = await db.query(`SELECT symbol, lastActive FROM ships
-      where role in (${roleMap})`);
+    db = await fetchConnectionFromPool();
+    const ships = await db.query(`SELECT symbol, lastActive FROM ships where role = "${role}"`);
     await db.beginTransaction();
     const restartedShips = await ships.reduce(async (prevPromise, { symbol, lastActive }) => {
       const prevAmount = await prevPromise;
@@ -286,9 +301,42 @@ const restartInactiveShips = async (minutes, roles, pool) => {
   }
 }
 
+const writeSurveys = async (surveys) => {
+  let db;
+  try {
+    db = await fetchConnectionFromPool();
+    await db.beginTransaction();
+    // TODO catch if surveys is null
+    if (surveys && surveys.length > 0) {
+      await surveys.reduce(async (prevPromise, oneSurvey) => {
+        const { signature, deposits, expiration, size, symbol: waypointSymbol } = oneSurvey;
+        // Delete old surveys
+        await db.query(`DELETE FROM surveys WHERE waypointSymbol = "${waypointSymbol}"`);
+        await deposits.reduce(async (nextPrevPromise, { symbol: depositSymbol }) => {
+          await nextPrevPromise;
+          const queryString = `INSERT INTO surveys
+          (waypointSymbol, surveySignature, expiration, depositSymbol, size)
+          VALUES ("${waypointSymbol}","${signature}", "${expiration}", "${depositSymbol}", "${size}")`;
+          return db.query(queryString);
+        }, prevPromise);
+      }, Promise.resolve());
+    } else {
+      console.log('Got an empty survey:');
+      // console.log(JSON.stringify(survey, null, 2));
+    }
+
+    await db.commit();
+  } catch (error) {
+    console.log(error);
+  } finally {
+    db.release();
+  }
+
+}
+
 // Keep the ships table updated
 // Could I do this with a map, or would I overload the database connection pool?
-const updateShipTable = async (pool) => {
+const updateShipTable = async () => {
   const allShips = await get('/my/ships');
   return allShips.reduce(async (prevPromise, ship) => {
     await prevPromise;
@@ -303,7 +351,7 @@ const updateShipTable = async (pool) => {
     } = ship;
     // Symbol is the primary key so this returns a zero or  one-element array
     const existingShipData = await singleQuery(`SELECT symbol, role, cargoCapacity FROM ships
-    where symbol = "${symbol}"`, pool);
+    where symbol = "${symbol}"`);
     if (existingShipData.length === 0) {
       await singleQuery(`INSERT INTO ships (symbol, role, cargoCapacity)
       VALUES ("${symbol}", "${role}", "${capacity}")`);
@@ -318,7 +366,7 @@ const endPool = () => {
 const getOrders = async (symbol) => {
   let db;
   try {
-    db = await pool.getConnection();
+    db = await fetchConnectionFromPool();
     const ordersResponse = await db.query(`SELECT orders from ships
       WHERE symbol = "${symbol}"`);
     return ordersResponse[0].orders;
@@ -333,7 +381,7 @@ const getOrders = async (symbol) => {
 const getDifferentSystemJumpgateWaypoint = async (currentSystem) => {
   let db;
   try {
-    db = await pool.getConnection();
+    db = await fetchConnectionFromPool();
     const systemsResponse = await db.query(`SELECT jumpGateWaypoint from systems
       WHERE systemSymbol != "${currentSystem}"`);
     const systems = systemsResponse.map(({ jumpGateWaypoint }) => jumpGateWaypoint);
@@ -356,7 +404,7 @@ const getDifferentSystemJumpgateWaypoint = async (currentSystem) => {
 const getAllSystemsAndJumpGates = async () => {
   let db;
   try {
-    db = await pool.getConnection();
+    db = await fetchConnectionFromPool();
     const systemsResponse = await db.query(`SELECT systemSymbol, jumpGateWaypoint from systems`);
     return systemsResponse;
   } catch (error) {
@@ -366,10 +414,10 @@ const getAllSystemsAndJumpGates = async () => {
   }
 }
 
-const singleQuery = async (queryString, pool) => {
+const singleQuery = async (queryString) => {
   let db;
   try {
-    db = await pool.getConnection();
+    db = await fetchConnectionFromPool();
     return await db.query(queryString);
   } catch (error) {
     console.log(error);
@@ -378,25 +426,27 @@ const singleQuery = async (queryString, pool) => {
   }
 }
 
-const getGlobalOrders = async (pool) => {
-  const ordersArray = await singleQuery('SELECT globalOrder FROM globalOrders', pool);
+const getGlobalOrders = async () => {
+  const ordersArray = await singleQuery('SELECT globalOrder FROM globalOrders');
   return ordersArray.map(({ globalOrder }) => globalOrder);
 }
 
 module.exports = {
-  getPool,
   initDatabase,
+  getAvailableMiningShips,
   getActiveTimeMinutes,
   controlShip,
   updateShipIsActive,
   restartInactiveShips,
   releaseShip,
   endPool,
+  fetchConnectionFromPool,
   getOrders,
   getDifferentSystemJumpgateWaypoint,
   getAllSystemsAndJumpGates,
   singleQuery,
   getShipsByOrders,
+  writeSurveys,
   updateShipTable,
   getGlobalOrders,
 };

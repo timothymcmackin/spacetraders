@@ -1,6 +1,6 @@
 const { find_path } = require('dijkstrajs');
 const { flatten } = require('lodash');
-const { singleQuery, endPool, fetchConnectionFromPool } = require('./databaseUtils');
+const { singleQuery, getPool } = require('./databaseUtils');
 
 const pathingTest = () => {
   // A B C
@@ -97,8 +97,10 @@ const pathingTest = () => {
 
 // Returns ['a', 'b', 'c', 'd']
 const getPathToSystem = async (sourceSystem, destinationSystem, tableName = 'jumpPaths') => {
+  let pool = getPool();
   // [{ systemA, systemB }]
-  const jumpPathsData = await singleQuery(`select systemA, systemB from ${tableName}`);
+  const jumpPathsData = await singleQuery(`select systemA, systemB from ${tableName}`, pool);
+  pool.end();
   // Get every endpoint
   const allEndpoints = jumpPathsData.reduce((endpoints, { systemA, systemB }) => {
     if (!endpoints.includes(systemA)) {
@@ -199,6 +201,10 @@ const testPathingFromDatabase = async () => {
 // testPathingFromDatabase()
 //   .catch(console.error)
 //   .finally(endPool);
+
+// getPathToSystem('X1-XR4', 'X1-NQ65')
+//   .then(console.log)
+
 
 module.exports = {
   getPathToSystem,

@@ -1,26 +1,24 @@
 require('dotenv').config();
-const {
-  post,
-  cooldown,
-  orbit,
-  survey,
-  ship,
-  ship,
-} = require('./api');
+const api = require('./api');
 const { singleQuery } = require('./databaseUtils');
 
 const timer = s => new Promise( res => setTimeout(res, s * 1000));
 
+const getSystemFromWaypoint = (waypointSymbol) => {
+  const stringSplit = waypointSymbol.split('-');
+  return `${stringSplit[0]}-${stringSplit[1]}`;
+}
+
 // Create a mining survey and write it to the database
 const survey = async (shipSymbol, pool) => {
-  const cooldownResponse = await cooldown(shipSymbol);
+  const cooldownResponse = await api.cooldown(shipSymbol);
   if (cooldownResponse && cooldownResponse.remainingSeconds > 0) {
     await timer(cooldownResponse.remainingSeconds + 1);
   }
 
-  await orbit(shipSymbol);
+  await api.orbit(shipSymbol);
 
-  const surveyResponse = await survey(shipSymbol)
+  const surveyResponse = await api.survey(shipSymbol)
     .catch((err) => {
       console.log('Mining survey failed; is the ship', shipSymbol, 'at a mining location?');
       console.log(JSON.stringify(err, null, 2));
@@ -60,8 +58,8 @@ const writeSurveys = async (surveys, pool) => {
 }
 
 const extract = async (shipSymbol, pool) => {
-  const { nav: { waypointSymbol } } = await ship(shipSymbol);
-  const cooldownResponse = await cooldown(shipSymbol);
+  const { nav: { waypointSymbol } } = await api.ship(shipSymbol);
+  const cooldownResponse = await api.cooldown(shipSymbol);
   if (cooldownResponse && cooldownResponse.remainingSeconds > 0) {
     await timer(cooldownResponse.remainingSeconds + 1);
   }
@@ -77,10 +75,10 @@ const extract = async (shipSymbol, pool) => {
     const expDate = Date.parse(expiration);
     return expDate > now;
   });
-  await orbit(shipSymbol);
+  await api.orbit(shipSymbol);
   if (data.length === 0) {
     // No survey found
-    return post(`/my/ships/${shipSymbol}/extract`);
+    return api.post(`/my/ships/${shipSymbol}/extract`);
   }
   // Reconstruct survey object because it's apparently all required?
   // "surveys": [
@@ -116,13 +114,13 @@ const extract = async (shipSymbol, pool) => {
       size: matchingDeposits[0].size,
     };
   });
-  return post(`/my/ships/${shipSymbol}/extract`, {
+  return api.post(`/my/ships/${shipSymbol}/extract`, {
     surveys,
   });
 }
 
 const extractUntilFull = async (shipSymbol, pool) => {
-  const ship = await ship(shipSymbol);
+  const ship = await api.ship(shipSymbol);
   var remainingCapacity = ship.cargo.capacity - ship.cargo.units;
   while (remainingCapacity > 0) {
     const extractResponse = await extract(shipSymbol, pool);
@@ -133,10 +131,20 @@ const extractUntilFull = async (shipSymbol, pool) => {
   }
 }
 
+const getJumpgateWaypointSymbol = async (systemSymbol) => {
+  const waypointsInSystem = await api.waypoints(systemSymbol);
+  const jumpgateWaypoint = waypointsInSystem.find(({ type }) => type === 'JUMP_GATE');
+  if (jumpgateWaypoint) {
+    return jumpgateWaypoint.symbol;
+  }
+}
+
 module.exports = {
   timer,
   writeSurveys,
   survey,
   extract,
   extractUntilFull,
+  getSystemFromWaypoint,
+  getJumpgateWaypointSymbol,
 }

@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { fetchConnectionFromPool } = require('./databaseUtils');
+const { getPool } = require('./databaseUtils');
 const { get, post } = require('./api');
 
 const buy = async (shipSymbol, tradeSymbol, units) => {
@@ -25,9 +25,10 @@ const buy = async (shipSymbol, tradeSymbol, units) => {
 }
 
 const updateMarketplaceData = async (systemSymbol, waypointSymbol, tradeGoods) => {
+  const pool = getPool();
   let db;
   try {
-    db = await fetchConnectionFromPool();
+    db = await pool.getConnection();
     await db.beginTransaction();
     await tradeGoods.reduce(async (prevPromise, { symbol, tradeVolume, supply, purchasePrice, sellPrice }) => {
       await prevPromise;
@@ -46,6 +47,7 @@ const updateMarketplaceData = async (systemSymbol, waypointSymbol, tradeGoods) =
       db.release();
     }
   }
+  pool.end();
   console.log('Updated marketplace data for', waypointSymbol);
 }
 

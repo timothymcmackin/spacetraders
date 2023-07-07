@@ -1,17 +1,13 @@
 require('dotenv').config();
 const {
-  navigate,
   getSystemFromWaypoint,
   sellAll,
   survey,
   extract,
   extractUntilFull,
 } = require('./utils');
-const {
-  post,
-  get,
-} = require('./api');
-const { endPool, updateShipTable } = require('./databaseUtils');
+const api = require('./api');
+const { navigate } = require('./navigationUtils');
 const argv = require('minimist')(process.argv.slice(2));
 
 const timer = s => new Promise( res => setTimeout(res, s * 1000));
@@ -40,31 +36,31 @@ const main = async () => {
   const cmd = argv['_'][0];
   switch (cmd) {
     case 'ship':
-      console.log(JSON.stringify((await get('/my/ships/' + ship.symbol)), null, 2));
+      console.log(JSON.stringify((await api.ship(ship.symbol)), null, 2));
       break;
     case 'ships':
-      console.log(JSON.stringify((await get('/my/ships')), null, 2));
+      console.log(JSON.stringify((await api.ships()), null, 2));
       break;
 
     case 'navigate':
       console.log('Navigating', ship.symbol, 'to', argv['_'][1]);
-      await navigate(ship, argv['_'][1], 'manual navigation');
+      await navigate(ship.symbol, argv['_'][1], 'manual navigation');
       break;
 
     case 'agent':
-      console.log(await get('/my/agent'));
+      console.log(await api.agent());
       break;
 
     case 'dock':
-      await post('/my/ships/' + ship.symbol + '/dock');
+      await api.dock(ship.symbol);
       break;
 
     case 'refuel':
-      await post('/my/ships/' + ship.symbol + '/refuel');
+      await api.refuel(ship.symbol);
       break;
 
     case 'orbit':
-      await post('/my/ships/' + ship.symbol + '/orbit');
+      await api.orbit(ship.symbol);
       break;
 
     case 'jump':
@@ -76,8 +72,8 @@ const main = async () => {
       break;
 
     case 'waypoints':
-      ship = await get('/my/ships/' + ship.symbol);
-      console.log(JSON.stringify(await get(`/systems/${ship.nav.systemSymbol}/waypoints`), null, 2));
+      ship = await api.ship(ship.symbol);
+      console.log(JSON.stringify(await api.waypoints(ship.nav.systemSymbol), null, 2));
       break;
 
     case 'waypoint':
@@ -92,10 +88,6 @@ const main = async () => {
 
     case 'sellAll':
       await sellAll(ship.symbol);
-      break;
-
-    case 'systems':
-      console.log(JSON.stringify(await get(`/systems`), null, 2));
       break;
 
     case 'survey':
@@ -119,7 +111,7 @@ const main = async () => {
       break;
 
     case 'cooldown':
-      const currentCooldown = await get(`/my/ships/${ship.symbol}/cooldown`);
+      const currentCooldown = await api.cooldown(ship.symbol);
       if (currentCooldown) {
         console.log(currentCooldown.remainingSeconds, 'remaining');
       } else {
@@ -132,7 +124,6 @@ const main = async () => {
       break;
   }
   console.log('done.');
-  endPool();
   process.exit(0);
 }
 main();

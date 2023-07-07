@@ -96,9 +96,13 @@ const orbit = (shipSymbol) => post(`/my/ships/${shipSymbol}/orbit`);
 
 const dock = (shipSymbol) => post(`/my/ships/${shipSymbol}/dock`);
 
+const refuel = (shipSymbol) => post(`/my/ships/${shipSymbol}/refuel`);
+
 const cooldown = (shipSymbol) => post(`/my/ships/${shipSymbol}/cooldown`);
 
 const survey = (shipSymbol) => post(`/my/ships/${shipSymbol}/survey`);
+
+const waypoints = (systemSymbol) => get(`/systems/${systemSymbol}/waypoints`);
 
 module.exports = {
   get,
@@ -107,7 +111,9 @@ module.exports = {
   ship,
   orbit,
   dock,
+  refuel,
   cooldown,
   survey,
   agent,
+  waypoints,
 }

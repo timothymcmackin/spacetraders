@@ -1,13 +1,5 @@
 require('dotenv').config();
-const {
-  get,
-  post,
-  ship,
-  cooldown,
-  orbit,
-  dock,
-  agent,
-} = require('./utils/api');
+const api = require('./utils/api');
 const {
   updateShipIsActive,
   releaseShip,
@@ -81,7 +73,7 @@ const main = async () => {
 // Assume we're at a marketplace
 // Be sure to check that they have a market for the good
 const sellAll = async (shipSymbol, dumpUnsold = false) => {
-  const { nav, cargo } = await ship(shipSymbol);
+  const { nav, cargo } = await api.ship(shipSymbol);
   const { systemSymbol, waypointSymbol } = nav;
   const { inventory } = cargo;
   if (inventory.length === 0) {
@@ -90,7 +82,7 @@ const sellAll = async (shipSymbol, dumpUnsold = false) => {
   }
 
   // Get the marketplace data
-  const marketplaceData = await get(`/systems/${systemSymbol}/waypoints/${waypointSymbol}/market`);
+  const marketplaceData = await api.get(`/systems/${systemSymbol}/waypoints/${waypointSymbol}/market`);
   const { tradeGoods } = marketplaceData;
   const thingsWeCanSellHere = tradeGoods.map(({ symbol }) => symbol);
 
@@ -107,7 +99,7 @@ const sellAll = async (shipSymbol, dumpUnsold = false) => {
         const tradeVolume = tradeGoods.find(({ symbol }) => symbol == materialSymbol).tradeVolume;
         while (unitsToSell > 0) {
           const unitsToSellThisTime = Math.min(unitsToSell, tradeVolume);
-          const { transaction } = await post(`/my/ships/${shipSymbol}/sell`, {
+          const { transaction } = await api.post(`/my/ships/${shipSymbol}/sell`, {
             symbol: materialSymbol,
             units: unitsToSellThisTime,
           });
@@ -118,7 +110,7 @@ const sellAll = async (shipSymbol, dumpUnsold = false) => {
         // Can't sell here, so dump it
         if (dumpUnsold) {
           console.log('Jettisoning', units, 'units of ', materialSymbol);
-          return post(`/my/ships/${shipSymbol}/jettison`, {
+          return api.post(`/my/ships/${shipSymbol}/jettison`, {
             symbol: materialSymbol,
             units,
           });
@@ -132,21 +124,21 @@ const sellAll = async (shipSymbol, dumpUnsold = false) => {
 
 const mineLoop = async (shipSymbol, pool) => {
   console.log(shipSymbol, 'Begin mine loop');
-  const cooldownResponse = await cooldown(shipSymbol);
+  const cooldownResponse = await api.cooldown(shipSymbol);
   console.log(shipSymbol, 'Mine loop cooldown', cooldownResponse ? cooldownResponse.remainingSeconds : 'null');
   if (cooldownResponse && cooldownResponse.remainingSeconds > 0) {
     await timer(cooldownResponse.remainingSeconds + 1);
   }
 
   console.log(shipSymbol, 'Begin orbit');
-  await orbit(shipSymbol);
+  await api.orbit(shipSymbol);
   console.log(shipSymbol, 'Orbited');
 
   await extractUntilFull(shipSymbol, pool);
 
   // Beginner starting system always has a marketplace at the asteroid field
   console.log(shipSymbol, 'Begin dock');
-  await dock(shipSymbol);
+  await api.dock(shipSymbol);
   console.log(shipSymbol, 'docked');
 
   console.log(shipSymbol, 'Begin sell all');
@@ -155,7 +147,7 @@ const mineLoop = async (shipSymbol, pool) => {
 
   // Need to await here because otherwise the database gets closed before this runs
   console.log(shipSymbol, 'Begin get agent');
-  await agent
+  await api.agent
     .then(({ credits }) =>
       singleQuery(`INSERT INTO credits (credits, event, date)
         VALUES ("${credits}", "Selling mined resources", "${Date.now().toString()}")`, pool)

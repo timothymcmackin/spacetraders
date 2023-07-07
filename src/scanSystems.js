@@ -2,12 +2,10 @@ require('dotenv').config();
 const api = require('./utils/api');
 const { getPool } = require('./utils/databaseUtils');
 
-
-
 // Global
 var scannedSystems = [];
 let pool = getPool();
-const depthLimit = 5;
+const depthLimit = 15;
 
 const main = async (initialSystemSymbol) => {
   // Get data on inital system

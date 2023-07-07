@@ -153,6 +153,7 @@ const initDatabase = async () => {
     await db.query(`CREATE TABLE credits (
       id int NOT NULL AUTO_INCREMENT,
       credits int NOT NULL,
+      date varchar(255),
       event varchar(255),
       PRIMARY KEY (id))`);
 

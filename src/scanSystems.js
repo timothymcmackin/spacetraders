@@ -74,13 +74,13 @@ const scanSystemRecursive = async (systemSymbol, depth = 0) => {
   const { connectedSystems } = await api.get(`systems/${systemSymbol}/waypoints/${jumpgateWaypoint.symbol}/jump-gate`);
 
   // Filter out systems that we've already scanned
-  const systemsToAdd = connectedSystems.filter(({ symbol }) => !scannedSystems.includes(symbol));
-  scannedSystems.push(...systemsToAdd.map(({ symbol }) => symbol))
+  const systemsToScan = connectedSystems.filter(({ symbol }) => !scannedSystems.includes(symbol));
+  scannedSystems.push(...systemsToScan.map(({ symbol }) => symbol));
 
   // Mark the possible jump paths
   try {
     db = await pool.getConnection();
-    await systemsToAdd.reduce(async (prevPromise, s) => {
+    await connectedSystems.reduce(async (prevPromise, s) => {
       await prevPromise;
       await addJumpPath(systemSymbol, s.symbol);
     }, Promise.resolve());
@@ -91,9 +91,9 @@ const scanSystemRecursive = async (systemSymbol, depth = 0) => {
     db.release();
   }
 
-  // Scan those systems recursively
+  // Scan unscanned systems recursively
   if (depth < depthLimit) {
-    await systemsToAdd.reduce(async (prevPromise, { symbol }) => {
+    await systemsToScan.reduce(async (prevPromise, { symbol }) => {
       await prevPromise;
       await scanSystemRecursive(symbol, depth + 1);
     }, Promise.resolve());

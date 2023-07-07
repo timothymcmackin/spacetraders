@@ -2,6 +2,11 @@ require('dotenv').config();
 const {
   get,
   post,
+  ship,
+  cooldown,
+  orbit,
+  dock,
+  agent,
 } = require('./utils/api');
 const {
   updateShipIsActive,
@@ -76,7 +81,7 @@ const main = async () => {
 // Assume we're at a marketplace
 // Be sure to check that they have a market for the good
 const sellAll = async (shipSymbol, dumpUnsold = false) => {
-  const { nav, cargo } = await get(`/my/ships/${shipSymbol}`);
+  const { nav, cargo } = await ship(shipSymbol);
   const { systemSymbol, waypointSymbol } = nav;
   const { inventory } = cargo;
   if (inventory.length === 0) {
@@ -112,6 +117,7 @@ const sellAll = async (shipSymbol, dumpUnsold = false) => {
       } else {
         // Can't sell here, so dump it
         if (dumpUnsold) {
+          console.log('Jettisoning', units, 'units of ', materialSymbol);
           return post(`/my/ships/${shipSymbol}/jettison`, {
             symbol: materialSymbol,
             units,
@@ -126,21 +132,21 @@ const sellAll = async (shipSymbol, dumpUnsold = false) => {
 
 const mineLoop = async (shipSymbol, pool) => {
   console.log(shipSymbol, 'Begin mine loop');
-  const cooldownResponse = await get(`/my/ships/${shipSymbol}/cooldown`);
+  const cooldownResponse = await cooldown(shipSymbol);
   console.log(shipSymbol, 'Mine loop cooldown', cooldownResponse ? cooldownResponse.remainingSeconds : 'null');
   if (cooldownResponse && cooldownResponse.remainingSeconds > 0) {
     await timer(cooldownResponse.remainingSeconds + 1);
   }
 
   console.log(shipSymbol, 'Begin orbit');
-  await post(`/my/ships/${shipSymbol}/orbit`);
+  await orbit(shipSymbol);
   console.log(shipSymbol, 'Orbited');
 
   await extractUntilFull(shipSymbol, pool);
 
   // Beginner starting system always has a marketplace at the asteroid field
   console.log(shipSymbol, 'Begin dock');
-  await post(`/my/ships/${shipSymbol}/dock`);
+  await dock(shipSymbol);
   console.log(shipSymbol, 'docked');
 
   console.log(shipSymbol, 'Begin sell all');
@@ -149,7 +155,7 @@ const mineLoop = async (shipSymbol, pool) => {
 
   // Need to await here because otherwise the database gets closed before this runs
   console.log(shipSymbol, 'Begin get agent');
-  await get('/my/agent')
+  await agent
     .then(({ credits }) =>
       singleQuery(`INSERT INTO credits (credits, event, date)
         VALUES ("${credits}", "Selling mined resources", "${Date.now().toString()}")`, pool)

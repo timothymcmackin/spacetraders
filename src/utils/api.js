@@ -83,7 +83,31 @@ const post = (path, body = {}) => api.post(path, body)
     console.log(JSON.stringify(error.response?.data ? error.response.data : error, null, 2));
   });
 
+
+// Convenience methods
+
+const ships = () => get('/my/ships');
+
+const agent = () => get('/my/agent');
+
+const ship = (shipSymbol) => get(`/my/ships/${shipSymbol}`);
+
+const orbit = (shipSymbol) => post(`/my/ships/${shipSymbol}/orbit`);
+
+const dock = (shipSymbol) => post(`/my/ships/${shipSymbol}/dock`);
+
+const cooldown = (shipSymbol) => post(`/my/ships/${shipSymbol}/cooldown`);
+
+const survey = (shipSymbol) => post(`/my/ships/${shipSymbol}/survey`);
+
 module.exports = {
   get,
-  post
+  post,
+  ships,
+  ship,
+  orbit,
+  dock,
+  cooldown,
+  survey,
+  agent,
 }

@@ -3,6 +3,7 @@ const mariadb = require('mariadb');
 const flatten = require('lodash/flatten');
 const {
   get,
+  ships,
 } = require('./api');
 
 const getPool = () => mariadb.createPool({
@@ -51,7 +52,7 @@ const initDatabase = async (pool) => {
       PRIMARY KEY (symbol)
     )`;
     await db.query(createShipsTable);
-    const shipData = await get('/my/ships');
+    const shipData = await ships();
     const ships = shipData.map(({ symbol, registration, cargo }) => ({
         symbol,
         role: registration.role,
@@ -289,7 +290,7 @@ const restartInactiveShips = async (minutes, roles, pool) => {
 // Keep the ships table updated
 // Could I do this with a map, or would I overload the database connection pool?
 const updateShipTable = async (pool) => {
-  const allShips = await get('/my/ships');
+  const allShips = await ships();
   return allShips.reduce(async (prevPromise, ship) => {
     await prevPromise;
     const {

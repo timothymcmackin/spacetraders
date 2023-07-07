@@ -1,7 +1,11 @@
 require('dotenv').config();
 const {
-  get,
   post,
+  cooldown,
+  orbit,
+  survey,
+  ship,
+  ship,
 } = require('./api');
 const { singleQuery } = require('./databaseUtils');
 
@@ -9,14 +13,14 @@ const timer = s => new Promise( res => setTimeout(res, s * 1000));
 
 // Create a mining survey and write it to the database
 const survey = async (shipSymbol, pool) => {
-  const cooldownResponse = await get(`/my/ships/${shipSymbol}/cooldown`);
+  const cooldownResponse = await cooldown(shipSymbol);
   if (cooldownResponse && cooldownResponse.remainingSeconds > 0) {
     await timer(cooldownResponse.remainingSeconds + 1);
   }
 
-  await post(`/my/ships/${shipSymbol}/orbit`);
+  await orbit(shipSymbol);
 
-  const surveyResponse = await post(`/my/ships/${shipSymbol}/survey`)
+  const surveyResponse = await survey(shipSymbol)
     .catch((err) => {
       console.log('Mining survey failed; is the ship', shipSymbol, 'at a mining location?');
       console.log(JSON.stringify(err, null, 2));
@@ -56,8 +60,8 @@ const writeSurveys = async (surveys, pool) => {
 }
 
 const extract = async (shipSymbol, pool) => {
-  const { nav: { waypointSymbol } } = await get(`/my/ships/${shipSymbol}`);
-  const cooldownResponse = await get(`/my/ships/${shipSymbol}/cooldown`);
+  const { nav: { waypointSymbol } } = await ship(shipSymbol);
+  const cooldownResponse = await cooldown(shipSymbol);
   if (cooldownResponse && cooldownResponse.remainingSeconds > 0) {
     await timer(cooldownResponse.remainingSeconds + 1);
   }
@@ -73,7 +77,7 @@ const extract = async (shipSymbol, pool) => {
     const expDate = Date.parse(expiration);
     return expDate > now;
   });
-  await post(`/my/ships/${shipSymbol}/orbit`);
+  await orbit(shipSymbol);
   if (data.length === 0) {
     // No survey found
     return post(`/my/ships/${shipSymbol}/extract`);
@@ -118,7 +122,7 @@ const extract = async (shipSymbol, pool) => {
 }
 
 const extractUntilFull = async (shipSymbol, pool) => {
-  const ship = await get('/my/ships/' + shipSymbol);
+  const ship = await ship(shipSymbol);
   var remainingCapacity = ship.cargo.capacity - ship.cargo.units;
   while (remainingCapacity > 0) {
     const extractResponse = await extract(shipSymbol, pool);

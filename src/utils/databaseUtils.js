@@ -68,6 +68,24 @@ const initDatabase = async (pool) => {
     }, Promise.resolve());
     await db.commit();
 
+    // List of ship types for sale
+    if (currentTables.includes('shipTypes')) {
+      await db.query('DROP TABLE shipTypes');
+    }
+    await db.query(`CREATE TABLE shipTypes (
+      shipType varchar(255),
+      PRIMARY KEY (shipType))`);
+
+    // Connection of which ships are available at which shipyard
+    if (currentTables.includes('shipyard_ships')) {
+      await db.query('DROP TABLE shipyard_ships');
+    }
+    await db.query(`CREATE TABLE shipyard_ships (
+      id int NOT NULL AUTO_INCREMENT,
+      waypointSymbol varchar(255),
+      shipType varchar(255),
+      PRIMARY KEY (id))`);
+
     if (currentTables.includes('marketplaceData')) {
       await db.query('DROP TABLE marketplaceData');
     }
@@ -87,7 +105,7 @@ const initDatabase = async (pool) => {
     }
     // Where you can go from each jump gate
     await db.query(`CREATE TABLE jumpPaths (
-      id int(11) NOT NULL AUTO_INCREMENT,
+      id int NOT NULL AUTO_INCREMENT,
       systemA varchar(255),
       systemB varchar(255),
       PRIMARY KEY (id))`);
@@ -98,8 +116,9 @@ const initDatabase = async (pool) => {
     await db.query(`CREATE TABLE waypoints (
       systemSymbol varchar(255) NOT NULL,
       waypointSymbol varchar(255) NOT NULL,
-      deadEnd int DEFAULT 0,
+      type varchar(255),
       marketplace Boolean,
+      shipyard Boolean,
       PRIMARY KEY (waypointSymbol))`);
 
     // Trade records

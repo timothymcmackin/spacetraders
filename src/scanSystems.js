@@ -79,7 +79,7 @@ const scanSystemRecursive = async (systemSymbol, pool, depth = 0) => {
     db = await pool.getConnection();
     await connectedSystems.reduce(async (prevPromise, s) => {
       await prevPromise;
-      await addJumpPath(systemSymbol, s.symbol);
+      await addJumpPath(systemSymbol, s.symbol, pool);
     }, Promise.resolve());
 
   } catch (error) {
@@ -97,7 +97,7 @@ const scanSystemRecursive = async (systemSymbol, pool, depth = 0) => {
   }
 }
 
-const addJumpPath = async (system1, system2) => {
+const addJumpPath = async (system1, system2, pool) => {
   // Has this jump path been indexed yet?
   let db;
   try {

@@ -6,14 +6,16 @@ const { findGoodSystems } = require('./findGoodSystems');
 
 const pool = getPool();
 
-initDatabase(pool)
-  .then(async () => {
-    // Get starting system
-    const ships = await api.ships();
-    const startingLocation = ships[0].nav.waypointSymbol;
-    // Populate the database
-    await scanSystems(startingLocation, pool);
-  })
-  .then(async () => findGoodSystems(pool))
+const main = async () => {
+  // await initDatabase(pool);
+  // Get starting system
+  const ships = await api.ships();
+  const startingLocation = ships[0].nav.systemSymbol;
+  // Populate the database
+  await scanSystems(startingLocation, pool);
+  await findGoodSystems(pool)
+}
+
+main()
   .catch(console.error)
   .finally(() => pool.end());

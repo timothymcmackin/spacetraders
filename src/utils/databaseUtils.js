@@ -1,10 +1,7 @@
 require('dotenv').config();
 const mariadb = require('mariadb');
 const flatten = require('lodash/flatten');
-const {
-  get,
-  ships,
-} = require('./api');
+const api = require('./api');
 
 const getPool = () => mariadb.createPool({
   host: process.env.DB_HOST,
@@ -52,8 +49,8 @@ const initDatabase = async (pool) => {
       PRIMARY KEY (symbol)
     )`;
     await db.query(createShipsTable);
-    const shipData = await ships();
-    const ships = shipData.map(({ symbol, registration, cargo }) => ({
+    const shipData = await api.ships();
+    const myShips = shipData.map(({ symbol, registration, cargo }) => ({
         symbol,
         role: registration.role,
         cargoCapacity: cargo.capacity,
@@ -62,7 +59,7 @@ const initDatabase = async (pool) => {
     // Add ships
     await db.beginTransaction();
     // Maybe one at a time? Instead of mapping to an array of promises?
-    await ships.reduce(async (prevPromise, {symbol, role, cargoCapacity}) => {
+    await myShips.reduce(async (prevPromise, {symbol, role, cargoCapacity}) => {
       await prevPromise;
       return db.query(`INSERT INTO ships (symbol, role, cargoCapacity) VALUES ("${symbol}", "${role}", ${cargoCapacity})`);
     }, Promise.resolve());
@@ -309,7 +306,7 @@ const restartInactiveShips = async (minutes, roles, pool) => {
 // Keep the ships table updated
 // Could I do this with a map, or would I overload the database connection pool?
 const updateShipTable = async (pool) => {
-  const allShips = await ships();
+  const allShips = await api.ships();
   return allShips.reduce(async (prevPromise, ship) => {
     await prevPromise;
     const {

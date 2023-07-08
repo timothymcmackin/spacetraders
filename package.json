@@ -6,7 +6,7 @@
   "license": "MIT",
   "scripts": {
     "newAgent": "node ./src/newAgent.js",
-    "initNewSystem": "node./stc/init.js",
+    "initNewSystem": "node ./src/init.js",
     "cli": "node ./src/utils/cli.js"
   },
   "dependencies": {

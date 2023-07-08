@@ -126,4 +126,4 @@ module.exports = {
 
 // test jump and navigate
 // navigate('KITE-1', 'X1-YU85-76885D', 'manual testing')
-navigate('KITE-1', 'X1-FV50-32536D', 'manual testing');
+// navigate('KITE-1', 'X1-FV50-32536D', 'manual testing');

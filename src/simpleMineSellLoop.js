@@ -19,8 +19,6 @@ const pool = getPool();
 
 const main = async () => {
 
-  const miningLocation = 'X1-YU85-76885D';
-
   var globalOrders = await getGlobalOrders(pool);
 
   var allPromises = [];
@@ -38,9 +36,7 @@ const main = async () => {
         .then(() => mineLoop(s, pool))
         .catch(console.error)
         .finally(async () => {
-          console.log(s, 'finally before releaseShip')
           await releaseShip(s, pool)
-          console.log(s, 'finally after releaseShip')
         })
     );
     if (allSurveyorsPromises.length) {
@@ -52,9 +48,7 @@ const main = async () => {
         .then(() => mineLoop(s, pool))
         .catch(console.error)
         .finally(async () => {
-          console.log(s, 'finally before releaseShip')
           await releaseShip(s, pool)
-          console.log(s, 'finally after releaseShip')
         })
     );
     if (allMinersPromises.length) {
@@ -130,30 +124,20 @@ const mineLoop = async (shipSymbol, pool) => {
     await timer(cooldownResponse.remainingSeconds + 1);
   }
 
-  console.log(shipSymbol, 'Begin orbit');
   await api.orbit(shipSymbol);
-  console.log(shipSymbol, 'Orbited');
 
   await extractUntilFull(shipSymbol, pool);
 
   // Beginner starting system always has a marketplace at the asteroid field
-  console.log(shipSymbol, 'Begin dock');
   await api.dock(shipSymbol);
-  console.log(shipSymbol, 'docked');
 
-  console.log(shipSymbol, 'Begin sell all');
   const profit = await sellAll(shipSymbol, true);
-  console.log(shipSymbol, 'Sell all complete');
 
   // Need to await here because otherwise the database gets closed before this runs
-  console.log(shipSymbol, 'Begin get agent');
-  await api.agent
+  await api.agent()
     .then(({ credits }) =>
       singleQuery(`INSERT INTO credits (credits, event, date)
         VALUES ("${credits}", "Selling mined resources", "${Date.now().toString()}")`, pool)
-    )
-    .then(() =>
-      console.log(shipSymbol, 'Begin extract until full')
     );
   console.log('Mining profit:', profit);
 }

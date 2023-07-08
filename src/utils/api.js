@@ -98,7 +98,7 @@ const dock = (shipSymbol) => post(`/my/ships/${shipSymbol}/dock`);
 
 const refuel = (shipSymbol) => post(`/my/ships/${shipSymbol}/refuel`);
 
-const cooldown = (shipSymbol) => post(`/my/ships/${shipSymbol}/cooldown`);
+const cooldown = (shipSymbol) => get(`/my/ships/${shipSymbol}/cooldown`);
 
 const survey = (shipSymbol) => post(`/my/ships/${shipSymbol}/survey`);
 

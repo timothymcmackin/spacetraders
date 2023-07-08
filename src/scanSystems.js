@@ -1,20 +1,17 @@
 require('dotenv').config();
 const api = require('./utils/api');
-const { getPool } = require('./utils/databaseUtils');
 
 // Global
 var scannedSystems = [];
-let pool = getPool();
 const depthLimit = 15;
 
-const main = async (initialSystemSymbol) => {
+const scanSystems = async (initialSystemSymbol, pool) => {
   // Get data on inital system
   scannedSystems.push(initialSystemSymbol);
-  await scanSystemRecursive(initialSystemSymbol);
-
+  await scanSystemRecursive(initialSystemSymbol, pool);
 }
 
-const scanSystemRecursive = async (systemSymbol, depth = 0) => {
+const scanSystemRecursive = async (systemSymbol, pool, depth = 0) => {
   const systemWaypoints = await api.get(`/systems/${systemSymbol}/waypoints`);
   const jumpgateWaypoint = systemWaypoints.find(({ type }) => type === 'JUMP_GATE');
 
@@ -95,7 +92,7 @@ const scanSystemRecursive = async (systemSymbol, depth = 0) => {
   if (depth < depthLimit) {
     await systemsToScan.reduce(async (prevPromise, { symbol }) => {
       await prevPromise;
-      await scanSystemRecursive(symbol, depth + 1);
+      await scanSystemRecursive(symbol, pool, depth + 1);
     }, Promise.resolve());
   }
 }
@@ -132,6 +129,10 @@ const addJumpPath = async (system1, system2) => {
 
 }
 
-main('X1-YU85')
-  .catch(console.error)
-  .finally(() => pool.end());
+// scanSystems('X1-YU85')
+//   .catch(console.error)
+//   .finally(() => pool.end());
+
+module.exports = {
+  scanSystems,
+}

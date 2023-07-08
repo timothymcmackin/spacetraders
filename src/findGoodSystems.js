@@ -1,13 +1,7 @@
 require('dotenv').config();
 const api = require('./utils/api');
-const {
-  getPool,
-} = require('./utils/databaseUtils');
 
-const pool = getPool();
-
-const main = async () => {
-  // We could do this with an inner join but this exposes the logic better
+const findGoodSystems = async (pool) => {
   let db;
   try {
     db = await pool.getConnection();
@@ -64,5 +58,6 @@ const main = async () => {
   }
 }
 
-main()
-  .finally(() => pool.end());
+module.exports = {
+  findGoodSystems,
+}

@@ -5,10 +5,9 @@
   "main": "index.js",
   "license": "MIT",
   "scripts": {
-    "miningByTick": "node ./src/miningByTick.js",
-    "buyingNewShipsByTick": "node ./src/buyingNewShipsByTick.js",
-    "cli": "node ./src/utils/cli.js",
-    "findCircularError": "node ./src/findCircularError.js"
+    "newAgent": "node ./src/newAgent.js",
+    "initNewSystem": "node./stc/init.js",
+    "cli": "node ./src/utils/cli.js"
   },
   "dependencies": {
     "axios": "^1.4.0",

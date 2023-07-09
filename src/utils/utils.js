@@ -11,12 +11,13 @@ const getSystemFromWaypoint = (waypointSymbol) => {
 
 // Create a mining survey and write it to the database
 const survey = async (shipSymbol, pool) => {
+
+  await api.orbit(shipSymbol);
+
   const cooldownResponse = await api.cooldown(shipSymbol);
   if (cooldownResponse && cooldownResponse.remainingSeconds > 0) {
     await timer(cooldownResponse.remainingSeconds + 1);
   }
-
-  await api.orbit(shipSymbol);
 
   const surveyResponse = await api.survey(shipSymbol)
     .catch((err) => {

@@ -1,9 +1,28 @@
 require('dotenv').config();
 const api = require('./utils/api');
+const { getPool } = require('./utils/databaseUtils');
+const axios = require('axios');
+const rateLimit = require('axios-rate-limit');
+const axiosRetry = require('axios-retry');
 
 // Global
 var scannedSystems = [];
 const depthLimit = 15;
+const pool = getPool();
+
+// Because I'm having issues with errors from the jump-gate endpoint
+const client = axios.create({
+  baseURL: 'https://api.spacetraders.io/v2/',
+  timeout: 50000,
+  headers: { 'Authorization': `Bearer ${process.env.SPACETRADERS_TOKEN}` },
+});
+axiosRetry(client, { retries: 3 });
+
+const localApi = rateLimit(client,
+  // Limit to 1 request per second
+  // https://github.com/aishek/axios-rate-limit
+  { maxRPS: 1}
+);
 
 const scanSystems = async (initialSystemSymbol, pool) => {
   // Get data on inital system
@@ -68,33 +87,42 @@ const scanSystemRecursive = async (systemSymbol, pool, depth = 0) => {
   }
 
   // Get where we can jump from this system
-  const { connectedSystems } = await api.get(`systems/${systemSymbol}/waypoints/${jumpgateWaypoint.symbol}/jump-gate`);
+ await localApi.get(`systems/${systemSymbol}/waypoints/${jumpgateWaypoint.symbol}/jump-gate`)
+   .then(async (jumpgateResponse) => {
+     const { connectedSystems } = jumpgateResponse.data.data;
+     if  (connectedSystems?.length > 0) {
+       // Filter out systems that we've already scanned
+       const systemsToScan = connectedSystems.filter(({ symbol }) => !scannedSystems.includes(symbol));
+       scannedSystems.push(...systemsToScan.map(({ symbol }) => symbol));
 
-  // Filter out systems that we've already scanned
-  const systemsToScan = connectedSystems.filter(({ symbol }) => !scannedSystems.includes(symbol));
-  scannedSystems.push(...systemsToScan.map(({ symbol }) => symbol));
+       // Mark the possible jump paths
+       try {
+         db = await pool.getConnection();
+         await connectedSystems.reduce(async (prevPromise, s) => {
+           await prevPromise;
+           await addJumpPath(systemSymbol, s.symbol, pool);
+         }, Promise.resolve());
 
-  // Mark the possible jump paths
-  try {
-    db = await pool.getConnection();
-    await connectedSystems.reduce(async (prevPromise, s) => {
-      await prevPromise;
-      await addJumpPath(systemSymbol, s.symbol, pool);
-    }, Promise.resolve());
+       } catch (error) {
+         console.log(error);
+       } finally {
+         db.release();
+       }
 
-  } catch (error) {
-    console.log(error);
-  } finally {
-    db.release();
-  }
+       // Scan unscanned systems recursively
+       if (depth < depthLimit) {
+         await systemsToScan.reduce(async (prevPromise, { symbol }) => {
+           await prevPromise;
+           await scanSystemRecursive(symbol, pool, depth + 1);
+         }, Promise.resolve());
+       }
+     }
 
-  // Scan unscanned systems recursively
-  if (depth < depthLimit) {
-    await systemsToScan.reduce(async (prevPromise, { symbol }) => {
-      await prevPromise;
-      await scanSystemRecursive(symbol, pool, depth + 1);
-    }, Promise.resolve());
-  }
+   })
+   .catch(err => {
+     // System not surveyed
+   });
+
 }
 
 const addJumpPath = async (system1, system2, pool) => {
@@ -129,9 +157,9 @@ const addJumpPath = async (system1, system2, pool) => {
 
 }
 
-// scanSystems('X1-YU85')
-//   .catch(console.error)
-//   .finally(() => pool.end());
+scanSystems('X1-QM77', pool)
+  .catch(console.error)
+  .finally(() => pool.end());
 
 module.exports = {
   scanSystems,

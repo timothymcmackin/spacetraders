@@ -17,15 +17,20 @@ const api = rateLimit(client,
 );
 
 // Utility functions to get rid of the data:data in every request
-const get = async (path) => {
+const get = async (path, returnError = false) => {
   var keepGoing = false;
-  const { data: firstResult, status } = await api.get(path);
+  const { data: firstResult, status } = await api.get(path)
+    .catch((err) => {
+      if (returnError) {
+        throw err;
+      }
+    });
   if (status === 429) {
     console.log('Rate limit on GET', path);
     await timer(2 * 60);
   } else if (!status.toString().startsWith('2')){
     console.log("ErrorCode:", data?.error?.code);
-    console.log(JSON.stringify(result.error, null, 2))
+    console.log(JSON.stringify(result.error, null, 2));
   }
   if (firstResult.meta && firstResult.meta.limit < firstResult.meta.total) {
     keepGoing = true;

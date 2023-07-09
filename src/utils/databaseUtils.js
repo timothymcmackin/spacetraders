@@ -95,6 +95,7 @@ const initDatabase = async (pool) => {
       supply varchar(255),
       purchasePrice int,
       sellPrice int,
+      updateTime varchar(255),
       PRIMARY KEY (systemSymbol, waypointSymbol, symbol))`);
 
     if (currentTables.includes('jumpPaths')) {

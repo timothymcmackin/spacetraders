@@ -1,11 +1,5 @@
 require('dotenv').config();
-const {
-  get,
-} = require('./api');
-const {
-  endPool,
-  fetchConnectionFromPool,
-} = require('./databaseUtils');
+const api = require('../utils/api');
 
 // Find out the most profitable trip to take from any marketplace in this system
 // returns:
@@ -22,15 +16,15 @@ const {
   ],
 }
 */
-const getMostprofitableTripFromSystem = async (shipSymbol, sourceSystemSymbol) => {
+const getMostprofitableTripFromSystem = async (shipSymbol, sourceSystemSymbol, pool) => {
   // Initial information
-  const ship = await get('/my/ships/' + shipSymbol);
+  const ship = await api.get('/my/ships/' + shipSymbol);
   if (!sourceSystemSymbol) {
     sourceSystemSymbol = ship.nav.systemSymbol;
   }
 
   // Get all the marketplaces in the system
-  const waypointData = await get(`/systems/${sourceSystemSymbol}/waypoints`);
+  const waypointData = await api.get(`/systems/${sourceSystemSymbol}/waypoints`);
   const waypointsWithMarketplaces = waypointData.filter(({ traits }) =>
     traits.some(({ symbol }) => symbol === 'MARKETPLACE'))
     .map(({ symbol }) => symbol);
@@ -67,7 +61,7 @@ const getMostprofitableTripFromSystem = async (shipSymbol, sourceSystemSymbol) =
 const getMostprofitableTripFromWaypoint = async (ship, sourceWaypointSymbol) => {
   // Initial information
   if (!ship.cargo || !ship.nav || !sourceWaypointSymbol) {
-    ship = await get('/my/ships/' + ship.symbol);
+    ship = await api.get('/my/ships/' + ship.symbol);
   }
   if (!sourceWaypointSymbol) {
     sourceWaypointSymbol = ship.nav.waypointSymbol;

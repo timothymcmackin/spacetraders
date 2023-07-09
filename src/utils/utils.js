@@ -79,6 +79,7 @@ const extract = async (shipSymbol, pool) => {
   await api.orbit(shipSymbol);
   if (data.length === 0) {
     // No survey found
+    console.log(shipSymbol, 'extracting without survey');
     return api.post(`/my/ships/${shipSymbol}/extract`);
   }
   // Reconstruct survey object because it's apparently all required?
@@ -115,6 +116,7 @@ const extract = async (shipSymbol, pool) => {
       size: matchingDeposits[0].size,
     };
   });
+  console.log(shipSymbol, 'extracting with survey');
   return api.post(`/my/ships/${shipSymbol}/extract`, {
     surveys,
   });

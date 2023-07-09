@@ -33,10 +33,10 @@ const updateMarketplaceData = async (systemSymbol, waypointSymbol, tradeGoods) =
     await tradeGoods.reduce(async (prevPromise, { symbol, tradeVolume, supply, purchasePrice, sellPrice }) => {
       await prevPromise;
       return db.query(`REPLACE INTO marketplaceData (
-          systemSymbol, waypointSymbol, symbol, tradeVolume, supply, purchasePrice, sellPrice
+          systemSymbol, waypointSymbol, symbol, tradeVolume, supply, purchasePrice, sellPrice, updateTime
         )
         VALUES (
-          "${systemSymbol}", "${waypointSymbol}", "${symbol}", "${tradeVolume}", "${supply}", "${purchasePrice}", "${sellPrice}"
+          "${systemSymbol}", "${waypointSymbol}", "${symbol}", "${tradeVolume}", "${supply}", "${purchasePrice}", "${sellPrice}", "${new Date()}"
         );`)
       }, Promise.resolve());
     await db.commit();

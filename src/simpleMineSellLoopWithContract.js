@@ -13,7 +13,7 @@ const { getMostPofitableTrip } = require('./utils/tradeUtils');
 const {
   timer,
   survey,
-  extractUntilFull,
+  extract,
 } = require('./utils/utils');
 const { navigate } = require('./utils/navigationUtils');
 const { isNumber } = require('lodash');
@@ -29,13 +29,32 @@ const main = async () => {
   var allPromises = [];
 
   while(globalOrders.includes('mineAndDeliver')) {
-    console.log('Main loop');
+
     await restartInactiveShips(10, ['COMMAND', 'EXCAVATOR'], pool);
 
-    const availableMiners = await getShipsByOrders('mine', pool);
-    const availableSurveyors = await getShipsByOrders('survey', pool);
-    const availableDeliverers = await getShipsByOrders('deliver', pool);
+    const ordersToManageInThisScript = ['deliver', 'mine', 'survey'];
+    let allShipsToManage = [];
+    // Get all ships that have orders
+    let db;
+    try {
+      db = await pool.getConnection();
+      const allShipsWithOrders = (await db.query(`SELECT symbol, orders FROM ships
+        WHERE orders IS NOT NULL AND lastActive IS NULL`))
+          .map(({ symbol, orders: ordersString }) => ({
+            symbol,
+            orders: ordersString.split(','),
+          }));
+      // Filter to the orders we're managing in this file
+      allShipsToManage = allShipsWithOrders.filter(({ orders }) =>
+        ordersToManageInThisScript.some((oneOrder) => orders.includes(oneOrder))
+      );
+    } catch (error) {
+      console.log(error);
+    } finally {
+      db.release();
+    }
 
+    // Get contract info
     const contractData = (await api.get(`/my/contracts`))[0];
     var contractTradeSymbol;
     if (contractData) {
@@ -44,58 +63,52 @@ const main = async () => {
       contractTradeSymbol = unitsRequired > unitsFulfilled ? contractData.terms.deliver[0].tradeSymbol : null;
     }
 
-    const allSurveyorsPromises = availableSurveyors.map((s) =>
-      updateShipIsActive(s, pool)
-        .then(() => navigate(s, miningLocation, 'starting mine loop'))
-        .then(() => survey(s, pool))
-        .then(() => mineLoop(s, contractTradeSymbol, pool))
-        .then(() => sellLoop(s, pool))
-        .catch(console.error)
-        .finally(async () => {
-          await releaseShip(s, pool)
-        })
-    );
-    if (allSurveyorsPromises.length) {
-      allPromises.push(...allSurveyorsPromises);
+    // Get promises that run the ships' orders
+    if (allShipsToManage.length > 0) {
+
+      const newShipPomises = allShipsToManage.map(({ symbol: shipSymbol, orders }) =>
+        shipOrdersLoop(shipSymbol , orders, contractData, contractTradeSymbol, miningLocation, pool)
+          .catch(console.error)
+          .finally(() => releaseShip(shipSymbol, pool))
+      );
+      allPromises.push(...newShipPomises);
+
     }
 
-    const allDeliverersPromises = availableDeliverers.map((s) =>
-      updateShipIsActive(s, pool)
-        .then(() => navigate(s, miningLocation, 'starting mine loop'))
-        .then(() => survey(s, pool))
-        .then(() => mineLoop(s, contractTradeSymbol, pool))
-        .then(() => deliveryLoop(s, contractData, pool))
-        .then(() => sellLoop(s, pool))
-        .catch(console.error)
-        .finally(async () => {
-          await releaseShip(s, pool)
-        })
-    );
-    if (allDeliverersPromises.length) {
-      allPromises.push(...allDeliverersPromises);
-    }
-
-    const allMinersPromises = availableMiners.map((s) =>
-      updateShipIsActive(s, pool)
-        .then(() => navigate(s, miningLocation, 'starting mine loop'))
-        .then(() => mineLoop(s, contractTradeSymbol, pool))
-        .then(() => sellLoop(s, pool))
-        .catch(console.error)
-        .finally(async () => {
-          await releaseShip(s, pool)
-        })
-    );
-    if (allMinersPromises.length) {
-      allPromises.push(...allMinersPromises);
-    }
-
-    await timer(60);
+    await timer(30);
     globalOrders = await getGlobalOrders(pool);
   }
   // After global orders change, wait for everyone to finish their task
   // before closing down
   await Promise.all(allPromises);
 
+}
+
+// Run the ship's orders
+const shipOrdersLoop = async (shipSymbol, orders, contractData, contractTradeSymbol, miningLocation, pool) => {
+  // Mark ship as active
+  await updateShipIsActive(shipSymbol, pool);
+  // Deliver cargo to contract
+  if (orders.includes('deliver')) {
+    await deliveryLoop(shipSymbol, contractData, pool)
+  }
+  // Survey mining location
+  if (orders.includes('survey')) {
+    await navigate(shipSymbol, miningLocation, 'starting survey loop');
+    await survey(shipSymbol, contractTradeSymbol, pool);
+  }
+  // Mine resources
+  if (orders.includes('mine')) {
+    await navigate(shipSymbol, miningLocation, 'starting mine loop');
+    await mineLoop(shipSymbol, contractTradeSymbol, pool);
+  }
+  // Deliver again
+  if (orders.includes('deliver')) {
+    await deliveryLoop(shipSymbol, contractData, pool)
+  }
+  // Sell what's left
+  await sellLoop(shipSymbol, pool);
+  await navigate(shipSymbol, miningLocation, 'return to mine location');
 }
 
 // Assume we're at a marketplace
@@ -118,6 +131,7 @@ const sellAll = async (shipSymbol, dumpUnsold = false) => {
   if (inventory.some(({ units }) => units > 0)) {
     // Sell everything
     // One good at a time due to limitations in the API
+    await api.dock(shipSymbol);
     await inventory.reduce(async (prevPromise, { symbol: materialSymbol, units }) => {
       await prevPromise;
       // Can we sell this here?
@@ -157,18 +171,20 @@ const deliveryLoop = async (shipSymbol, contractData = {}) => {
     const { cargo: { inventory } } = await api.ship(shipSymbol);
     const contractInventory = inventory.find(({ symbol }) => symbol === tradeSymbol);
     if (contractInventory) {
-      const { units } = Math.min(contractInventory.units, unitsRequired - unitsFulfilled);
+      const units = Math.min(contractInventory.units, unitsRequired - unitsFulfilled);
       await navigate(shipSymbol, destinationSymbol, 'to deliver on contract');
+      await api.dock(shipSymbol);
       await api.post(`/my/contracts/${contractData.id}/deliver`, {
         shipSymbol,
         tradeSymbol,
         units,
-      })
+      });
+      await api.orbit(shipSymbol);
     }
   }
 }
 
-const mineLoop = async (shipSymbol, contract = {}, pool) => {
+const mineLoop = async (shipSymbol, contractTradeSymbol, pool) => {
   console.log(shipSymbol, 'Begin mine loop');
   const cooldownResponse = await api.cooldown(shipSymbol);
   console.log(shipSymbol, 'Mine loop cooldown', cooldownResponse ? cooldownResponse.remainingSeconds : 'null');
@@ -193,7 +209,95 @@ const mineLoop = async (shipSymbol, contract = {}, pool) => {
   await navigate(shipSymbol, miningLocation, 'to mine');
   await api.orbit(shipSymbol);
 
-  await extractUntilFull(shipSymbol, contract, pool);
+  // Get this ship's orders
+  let db;
+  let orders;
+  try {
+    db = await pool.getConnection();
+    orders = (await db.query(`SELECT orders from ships
+      WHERE symbol = "${shipSymbol}"`))[0].orders.split(',');
+  } catch (error) {
+    console.log(error);
+  } finally {
+    db.release();
+  }
+
+  var ship = await api.ship(shipSymbol);
+  var remainingCapacity = ship.cargo.capacity - ship.cargo.units;
+  while (remainingCapacity > 0) {
+    const extractResponse = await extract(shipSymbol, contractTradeSymbol, pool);
+    ship = await api.ship(shipSymbol);
+    remainingCapacity = ship.cargo.capacity - ship.cargo.units;
+
+    // If this is NOT a delivery ship, transfer contracted cargo to a delivery ship
+    if (!orders.includes('deliver')) {
+      await transferToDelivery(shipSymbol, contractTradeSymbol, pool);
+    }
+
+    if (remainingCapacity > 0) {
+      await timer(extractResponse.cooldown.remainingSeconds || 0 + 1);
+    }
+  }
+}
+
+const transferToDelivery = async (shipSymbol, contractTradeSymbol, pool) => {
+  // Transfer cargo to delivery ship
+  // Do I have any of the contract delivery symbol?
+  const ship = await api.ship(shipSymbol);
+  const { cargo: { inventory } } = ship;
+  const contractInventory = inventory.find(({ symbol }) => symbol === contractTradeSymbol);
+  if (contractInventory) {
+
+    let db;
+    try {
+      db = await pool.getConnection();
+      // Wait a little while for a delivery ship
+      var numberOfTimesToWait = 5;
+      var delaySeconds = 30;
+      var deliveryShipsHere = [];
+      while (deliveryShipsHere.length === 0 && numberOfTimesToWait > 0) {
+        numberOfTimesToWait--;
+        // Is there a delivery ship here?
+        const deliveryShipSymbols = (await db.query(`select symbol from ships where orders like "%deliver%"`))
+          .map(({ symbol }) => symbol);
+        deliveryShipsHere = await deliveryShipSymbols.reduce(async (prevListPromise, s) => {
+          var prevList = await prevListPromise;
+          const deliveryShipData = await api.ship(s);
+          if (deliveryShipData?.nav?.waypointSymbol === ship.nav.waypointSymbol) {
+            prevList.push(s);
+          }
+          return prevList;
+        }, []);
+        if (deliveryShipsHere.length === 0) {
+          await timer(delaySeconds);
+        }
+      }
+
+      if (deliveryShipsHere.length > 0) {
+        // Transfer contract content to delivery ships
+        var unitsToTransfer = contractInventory.units;
+        while (unitsToTransfer > 0 && deliveryShipsHere.length > 0) {
+          const oneDeliveryShip = deliveryShipsHere.pop();
+          // Get capacity of delivery ship
+          const { cargo: { capacity, units } } = await api.ship(oneDeliveryShip);
+          if (units < capacity) {
+            const unitsToTransferThisTime = Math.min(unitsToTransfer, capacity - units);
+            unitsToTransfer -= unitsToTransferThisTime;
+            await api.post(`/my/ships/${shipSymbol}/transfer`, {
+              tradeSymbol: contractTradeSymbol,
+              units: unitsToTransferThisTime,
+              shipSymbol: oneDeliveryShip,
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.log(error);
+    } finally {
+      db.release();
+    }
+
+  }
 }
 
 const sellLoop = async (shipSymbol, pool) => {
@@ -201,8 +305,10 @@ const sellLoop = async (shipSymbol, pool) => {
   // Get where to take the cargo
   const targetWaypointSymbol = await getMostPofitableTrip(shipSymbol, pool);
 
-  await navigate(shipSymbol, targetWaypointSymbol, 'to sell resources');
-  await api.dock(shipSymbol);
+  if (targetWaypointSymbol) {
+    await navigate(shipSymbol, targetWaypointSymbol, 'to sell resources');
+    await api.dock(shipSymbol);
+  }
 
   const profit = await sellAll(shipSymbol, true);
 

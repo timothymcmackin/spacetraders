@@ -25,6 +25,7 @@ const buy = async (shipSymbol, tradeSymbol, units) => {
 }
 
 const updateMarketplaceData = async (systemSymbol, waypointSymbol, tradeGoods) => {
+  if (tradeGoods.length > 0) return;
   const pool = getPool();
   let db;
   try {

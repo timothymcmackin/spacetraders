@@ -182,14 +182,15 @@ const initDatabase = async (pool) => {
 
 // Get ships with specific orders
 const getShipsByOrders = async (orders, pool, includeActive = false) => {
+  let ships;
   let db;
   try {
     db = await pool.getConnection();
     if (includeActive) {
-      ships = flatten(await db.query(`SELECT symbol FROM ships WHERE orders = "${orders}"`));
+      ships = flatten(await db.query(`SELECT symbol FROM ships WHERE orders LIKE "%${orders}%"`));
       return ships.map(({ symbol }) => symbol);
     } else {
-      ships = flatten(await db.query(`SELECT symbol FROM ships WHERE orders = "${orders}" and lastActive IS NULL`));
+      ships = flatten(await db.query(`SELECT symbol FROM ships WHERE orders LIKE "%${orders}%" and lastActive IS NULL`));
       return ships.map(({ symbol }) => symbol);
     }
   } catch (error) {
@@ -339,7 +340,7 @@ const getOrders = async (symbol) => {
     db = await pool.getConnection();
     const ordersResponse = await db.query(`SELECT orders from ships
       WHERE symbol = "${symbol}"`);
-    return ordersResponse[0].orders;
+    return ordersResponse[0].orders.split(',');
   } catch (error) {
     console.log(error);
   } finally {

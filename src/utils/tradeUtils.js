@@ -40,8 +40,8 @@ const getMostPofitableTrip = async (shipSymbol, pool) => {
     }));
 
     const mostProfit = Math.max(...profitPerWaypoint.map(({ profit }) => profit));
-    const mostProfitableWaypointSymbol = profitPerWaypoint.find(({ profit }) => profit === mostProfit).waypointSymbol;
-    return mostProfitableWaypointSymbol;
+    const mostProfitableWaypointSymbol = profitPerWaypoint.find(({ profit }) => profit === mostProfit);
+    return mostProfitableWaypointSymbol?.waypointSymbol;
   } catch (error) {
     console.log(error);
   } finally {

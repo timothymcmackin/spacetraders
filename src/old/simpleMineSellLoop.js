@@ -1,5 +1,5 @@
 require('dotenv').config();
-const api = require('./utils/api');
+const api = require('../utils/api');
 const {
   updateShipIsActive,
   releaseShip,
@@ -8,12 +8,12 @@ const {
   getShipsByOrders,
   getGlobalOrders,
   singleQuery,
-} = require('./utils/databaseUtils');
+} = require('../utils/databaseUtils');
 const {
   timer,
   survey,
   extractUntilFull,
-} = require('./utils/utils');
+} = require('../utils/utils');
 
 const pool = getPool();
 

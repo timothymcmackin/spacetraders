@@ -7,6 +7,8 @@
   "scripts": {
     "newAgent": "node ./src/newAgent.js",
     "initNewSystem": "node ./src/init.js",
+    "mine": "node ./src/simpleMineSellLoopWithContract.js",
+    "monitor": "node ./src/monitorLoop.js",
     "cli": "node ./src/utils/cli.js"
   },
   "dependencies": {

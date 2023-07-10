@@ -10,7 +10,7 @@ const getSystemFromWaypoint = (waypointSymbol) => {
 }
 
 // Create a mining survey and write it to the database
-const survey = async (shipSymbol, pool) => {
+const survey = async (shipSymbol, contractTradeSymbol, pool) => {
 
   await api.orbit(shipSymbol);
 
@@ -24,10 +24,21 @@ const survey = async (shipSymbol, pool) => {
       console.log('Mining survey failed; is the ship', shipSymbol, 'at a mining location?');
       console.log(JSON.stringify(err, null, 2));
     });
-  await writeSurveys(surveyResponse.surveys, pool);
+  if (contractTradeSymbol) {
+    // We're interested in one material in particular
+    if (surveyResponse.surveys.some(({ deposits }) =>
+      deposits.some(({ symbol }) => symbol === contractTradeSymbol)
+    )) {
+      // TODO the more times the material shows up, the more we get
+      await writeSurveys(surveyResponse.surveys, pool);
+    }
+  } else {
+    await writeSurveys(surveyResponse.surveys, pool);
+  }
 }
 
 const writeSurveys = async (surveys, pool) => {
+  await deleteOldSurveys(pool);
   let db;
   try {
     db = await pool.getConnection();
@@ -35,6 +46,9 @@ const writeSurveys = async (surveys, pool) => {
     if (surveys && surveys.length > 0) {
       await surveys.reduce(async (prevPromise, oneSurvey) => {
         const { signature, deposits, expiration, size, symbol: waypointSymbol } = oneSurvey;
+        const allDeposits = deposits.map(({ symbol }) => symbol);
+        console.log('Writing survey that contains', allDeposits.join(','));
+        // TODO compare surveys and see which one has the most of the target material
         // Delete old surveys
         await db.query(`DELETE FROM surveys WHERE waypointSymbol = "${waypointSymbol}"`);
         await deposits.reduce(async (nextPrevPromise, { symbol: depositSymbol }) => {
@@ -58,7 +72,30 @@ const writeSurveys = async (surveys, pool) => {
 
 }
 
-const extract = async (shipSymbol, pool) => {
+const deleteOldSurveys = async (pool) => {
+  let db;
+  try {
+    db = await pool.getConnection();
+    const waypointSurveys = await db.query(`SELECT id, expiration FROM surveys`);
+    const now = new Date();
+    const idsToDelete = waypointSurveys.reduce((list, { id, expiration }) => {
+      const expirationDate = Date.parse(expiration);
+      if (now > expirationDate && !list.includes(id)) {
+        list.push(id)
+      }
+      return list;
+    }, []);
+    if (idsToDelete.length > 0) {
+      await db.query(`DELETE FROM surveys WHERE id IN (${idsToDelete.join(',')})`);
+    }
+  } catch (error) {
+    console.log(error);
+  } finally {
+    db.release();
+  }
+}
+
+const extract = async (shipSymbol, contractTradeSymbol, pool) => {
   const { nav: { waypointSymbol } } = await api.ship(shipSymbol);
   const cooldownResponse = await api.cooldown(shipSymbol);
   if (cooldownResponse && cooldownResponse.remainingSeconds > 0) {
@@ -70,12 +107,7 @@ const extract = async (shipSymbol, pool) => {
   WHERE waypointSymbol = "${waypointSymbol}"`;
   // How to get these in order?
   // Currently I'm auto-deleting the older ones from the database, so you should only get one survey
-  const dataWithExpiration = await singleQuery(queryString, pool);
-  const now = new Date();
-  const data = dataWithExpiration.filter(({ expiration }) => {
-    const expDate = Date.parse(expiration);
-    return expDate > now;
-  });
+  const data = await singleQuery(queryString, pool);
   await api.orbit(shipSymbol);
   if (data.length === 0) {
     // No survey found
@@ -105,8 +137,11 @@ const extract = async (shipSymbol, pool) => {
   // Assemble the full object
   const surveys = surveySignatures.map((oneSurveySignature) => {
     const matchingDeposits = data.filter(({ surveySignature }) => surveySignature === oneSurveySignature);
-    const deposits = matchingDeposits.map(({ depositSymbol }) => ({
-      symbol: depositSymbol,
+    const deposits = matchingDeposits
+    // TODO Can I get just the resources I'm interested in?
+      // .filter(({ depositSymbol }) => depositSymbol === contractTradeSymbol)
+      .map(({ depositSymbol }) => ({
+        symbol: depositSymbol,
     }));
     return {
       signature: oneSurveySignature,
@@ -117,6 +152,7 @@ const extract = async (shipSymbol, pool) => {
     };
   });
   console.log(shipSymbol, 'extracting with survey');
+  // console.log(JSON.stringify(surveys, null, 2));
   return api.post(`/my/ships/${shipSymbol}/extract`, {
     surveys,
   });
@@ -126,15 +162,18 @@ const extractUntilFull = async (shipSymbol, contractTradeSymbol, pool) => {
   const ship = await api.ship(shipSymbol);
   var remainingCapacity = ship.cargo.capacity - ship.cargo.units;
   while (remainingCapacity > 0) {
-    const extractResponse = await extract(shipSymbol, pool);
+    const extractResponse = await extract(shipSymbol, contractTradeSymbol, pool);
     remainingCapacity = extractResponse?.cargo.capacity - extractResponse?.cargo.units;
 
     if (contractTradeSymbol) {
       let db;
       try {
         db = await pool.getConnection();
+        // const deliveryShips = (await db.query(`SELECT symbols FROM ships where orders like "%deliver%"`))
         const myOrders = (await db.query(`SELECT orders FROM ships where symbol = "${shipSymbol}"`))[0].orders;
 
+        // If I'm a delivery ship
+        // TODO rework this loop for delivery ships
         if (myOrders !== "deliver") {
           // Transfer cargo to delivery ship
           // Do I have any of the contract delivery symbol?
@@ -142,32 +181,44 @@ const extractUntilFull = async (shipSymbol, contractTradeSymbol, pool) => {
           const contractInventory = inventory.find(({ symbol }) => symbol === contractTradeSymbol);
           if (contractInventory) {
 
-            // Is there a delivery ship here?
-            const deliveryShipSymbols = (await db.query(`select symbol from ships where orders = "deliver"`))
-            .map(({ symbol }) => symbol);
-            const deliveryShipsHere = await deliveryShipSymbols.reduce(async (prevListPromise, s) => {
-              var prevList = await prevListPromise;
-              const deliveryShipData = await api.ship(s);
-              if (deliveryShipData?.nav?.waypointSymbol === ship.nav.waypointSymbol) {
-                prevList.push(s);
+            // Wait a little while for a delivery ship
+            var numberOfTimesToWait = 5;
+            var delaySeconds = 30;
+            var deliveryShipsHere = [];
+            while (deliveryShipsHere.length === 0 || numberOfTimesToWait > 0) {
+              numberOfTimesToWait--;
+              // Is there a delivery ship here?
+              const deliveryShipSymbols = (await db.query(`select symbol from ships where orders = "deliver"`))
+                .map(({ symbol }) => symbol);
+              deliveryShipsHere = await deliveryShipSymbols.reduce(async (prevListPromise, s) => {
+                var prevList = await prevListPromise;
+                const deliveryShipData = await api.ship(s);
+                if (deliveryShipData?.nav?.waypointSymbol === ship.nav.waypointSymbol) {
+                  prevList.push(s);
+                }
+                return prevList;
+              }, []);
+              if (deliveryShipsHere.length === 0) {
+                await timer(delaySeconds);
               }
-              return prevList;
-            }, []);
+            }
 
-            // Transfer contract content to delivery ships
-            var unitsToTransfer = contractInventory.units;
-            while (unitsToTransfer > 0 && deliveryShipsHere.length > 0) {
-              const oneDeliveryShip = deliveryShipsHere.pop();
-              // Get capacity of delivery ship
-              const { cargo: { capacity, units } } = await api.ship(oneDeliveryShip);
-              if (units < capacity) {
-                const unitsToTransferThisTime = Math.min(unitsToTransfer, capacity - units);
-                unitsToTransfer -= unitsToTransferThisTime;
-                await api.post(`/my/ships/${shipSymbol}/transfer`, {
-                  tradeSymbol: contractTradeSymbol,
-                  units: unitsToTransferThisTime,
-                  shipSymbol: oneDeliveryShip,
-                });
+            if (deliveryShipsHere.length > 1) {
+              // Transfer contract content to delivery ships
+              var unitsToTransfer = contractInventory.units;
+              while (unitsToTransfer > 0 && deliveryShipsHere.length > 0) {
+                const oneDeliveryShip = deliveryShipsHere.pop();
+                // Get capacity of delivery ship
+                const { cargo: { capacity, units } } = await api.ship(oneDeliveryShip);
+                if (units < capacity) {
+                  const unitsToTransferThisTime = Math.min(unitsToTransfer, capacity - units);
+                  unitsToTransfer -= unitsToTransferThisTime;
+                  await api.post(`/my/ships/${shipSymbol}/transfer`, {
+                    tradeSymbol: contractTradeSymbol,
+                    units: unitsToTransferThisTime,
+                    shipSymbol: oneDeliveryShip,
+                  });
+                }
               }
             }
           }
@@ -199,6 +250,7 @@ module.exports = {
   survey,
   extract,
   extractUntilFull,
+  extract,
   getSystemFromWaypoint,
   getJumpgateWaypointSymbol,
 }

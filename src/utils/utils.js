@@ -122,15 +122,66 @@ const extract = async (shipSymbol, pool) => {
   });
 }
 
-const extractUntilFull = async (shipSymbol, pool) => {
+const extractUntilFull = async (shipSymbol, contractTradeSymbol, pool) => {
   const ship = await api.ship(shipSymbol);
   var remainingCapacity = ship.cargo.capacity - ship.cargo.units;
   while (remainingCapacity > 0) {
     const extractResponse = await extract(shipSymbol, pool);
     remainingCapacity = extractResponse?.cargo.capacity - extractResponse?.cargo.units;
-    if (remainingCapacity > 0) {
-      await timer(extractResponse.cooldown.remainingSeconds || 0 + 1);
+
+    if (contractTradeSymbol) {
+      let db;
+      try {
+        db = await pool.getConnection();
+        const myOrders = (await db.query(`SELECT orders FROM ships where symbol = "${shipSymbol}"`))[0].orders;
+
+        if (myOrders !== "deliver") {
+          // Transfer cargo to delivery ship
+          // Do I have any of the contract delivery symbol?
+          const { cargo: { inventory } } = await api.ship(shipSymbol);
+          const contractInventory = inventory.find(({ symbol }) => symbol === contractTradeSymbol);
+          if (contractInventory) {
+
+            // Is there a delivery ship here?
+            const deliveryShipSymbols = (await db.query(`select symbol from ships where orders = "deliver"`))
+            .map(({ symbol }) => symbol);
+            const deliveryShipsHere = await deliveryShipSymbols.reduce(async (prevListPromise, s) => {
+              var prevList = await prevListPromise;
+              const deliveryShipData = await api.ship(s);
+              if (deliveryShipData?.nav?.waypointSymbol === ship.nav.waypointSymbol) {
+                prevList.push(s);
+              }
+              return prevList;
+            }, []);
+
+            // Transfer contract content to delivery ships
+            var unitsToTransfer = contractInventory.units;
+            while (unitsToTransfer > 0 && deliveryShipsHere.length > 0) {
+              const oneDeliveryShip = deliveryShipsHere.pop();
+              // Get capacity of delivery ship
+              const { cargo: { capacity, units } } = await api.ship(oneDeliveryShip);
+              if (units < capacity) {
+                const unitsToTransferThisTime = Math.min(unitsToTransfer, capacity - units);
+                unitsToTransfer -= unitsToTransferThisTime;
+                await api.post(`/my/ships/${shipSymbol}/transfer`, {
+                  tradeSymbol: contractTradeSymbol,
+                  units: unitsToTransferThisTime,
+                  shipSymbol: oneDeliveryShip,
+                });
+              }
+            }
+          }
+
+        }
+
+      } catch (error) {
+        console.log(error);
+      } finally {
+        db.release();
+      }
     }
+
+    await timer(extractResponse.cooldown.remainingSeconds || 0 + 1);
   }
 }
 

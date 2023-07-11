@@ -2,6 +2,7 @@ require('dotenv').config();
 const mariadb = require('mariadb');
 const flatten = require('lodash/flatten');
 const api = require('./api');
+const { globalOrders } = require('./orders');
 
 const getPool = () => mariadb.createPool({
   host: process.env.DB_HOST,
@@ -160,8 +161,13 @@ const initDatabase = async (pool) => {
       await db.query('DROP TABLE globalOrders');
     }
     await db.query(`CREATE TABLE globalOrders (
-      globalOrder varchar(255) NOT NULL,
-      PRIMARY KEY (globalOrder))`);
+      orderName varchar(255) NOT NULL,
+      active Boolean,
+      PRIMARY KEY (orderName))`);
+    await globalOrders.reduce(async (prevPromise, { orderName, defaultValue }) => {
+      await prevPromise;
+      await db.query(`INSERT INTO globalOrders VALUES ("${orderName}", ${defaultValue})`);
+    }, Promise.resolve());
 
     if (currentTables.includes('credits')) {
       await db.query('DROP TABLE credits');
@@ -398,8 +404,16 @@ const singleQuery = async (queryString, pool) => {
 }
 
 const getGlobalOrders = async (pool) => {
-  const ordersArray = await singleQuery('SELECT globalOrder FROM globalOrders', pool);
-  return ordersArray.map(({ globalOrder }) => globalOrder);
+  let db;
+  try {
+    db = await pool.getConnection();
+    const ordersArray = await db.query('SELECT orderName FROM globalOrders WHERE active = true', pool);
+    return ordersArray.map(({ orderName }) => orderName);
+  } catch (error) {
+    console.log(error);
+  } finally {
+    db.release();
+  }
 }
 
 module.exports = {

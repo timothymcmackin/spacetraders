@@ -55,12 +55,18 @@ const main = async () => {
     }
 
     // Get contract info
-    const contractData = (await api.get(`/my/contracts`))[0];
     var contractTradeSymbol;
-    if (contractData) {
-      contractId = contractData.id;
-      const { unitsRequired, unitsFulfilled } = contractData.terms.deliver[0];
-      contractTradeSymbol = unitsRequired > unitsFulfilled ? contractData.terms.deliver[0].tradeSymbol : null;
+    if (globalOrders.includes('contract')) {
+      const contractData = (await api.get(`/my/contracts`))[0];
+      if (contractData?.accepted && !contractData?.fulfilled) {
+        contractId = contractData.id;
+        const { unitsRequired, unitsFulfilled } = contractData.terms.deliver[0];
+        if (unitsFulfilled >= unitsRequired && !contractData.fulfilled) {
+          await api.post(`/my/contracts/${contractData.id}/fulfill`);
+        } else {
+          contractTradeSymbol = unitsRequired > unitsFulfilled ? contractData.terms.deliver[0].tradeSymbol : null;
+        }
+      }
     }
 
     // Get promises that run the ships' orders
@@ -81,7 +87,7 @@ const main = async () => {
   // After global orders change, wait for everyone to finish their task
   // before closing down
   await Promise.all(allPromises);
-
+  console.log('Done.');
 }
 
 // Run the ship's orders
@@ -230,7 +236,7 @@ const mineLoop = async (shipSymbol, contractTradeSymbol, pool) => {
     remainingCapacity = ship.cargo.capacity - ship.cargo.units;
 
     // If this is NOT a delivery ship, transfer contracted cargo to a delivery ship
-    if (!orders.includes('deliver')) {
+    if (contractTradeSymbol && !orders.includes('deliver')) {
       await transferToDelivery(shipSymbol, contractTradeSymbol, pool);
     }
 

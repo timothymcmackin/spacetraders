@@ -55,9 +55,9 @@ const main = async () => {
     }
 
     // Get contract info
-    var contractTradeSymbol;
+    var contractTradeSymbol, contractData;
     if (globalOrders.includes('contract')) {
-      const contractData = (await api.get(`/my/contracts`))[0];
+      contractData = (await api.get(`/my/contracts`))[0];
       if (contractData?.accepted && !contractData?.fulfilled) {
         contractId = contractData.id;
         const { unitsRequired, unitsFulfilled } = contractData.terms.deliver[0];
